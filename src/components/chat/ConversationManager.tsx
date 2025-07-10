@@ -71,25 +71,34 @@ export const useConversationManager = () => {
   // Check if all required data is collected
   const checkDataComplete = () => {
     const requiredFields = ['plaidConnected', 'dateOfBirth', 'employmentType', 'vehicleType', 'vinOrModel', 'downPayment', 'tradeInValue'];
-    return requiredFields.every(field => {
+    const isComplete = requiredFields.every(field => {
       const value = userData[field as keyof typeof userData];
       return value !== undefined && value !== null && value !== '';
     });
+    console.log('Data completeness check:', { requiredFields, userData, isComplete });
+    return isComplete;
   };
 
   // Get the next step in the conversation
   const getNextStep = (): ConversationStep | null => {
     console.log('Getting next step, current userData:', userData);
+    console.log('Current step:', currentStep);
     
-    // Check each step in order
-    for (const step of conversationSteps) {
-      if (step.id === 'welcome' && !userData.plaidConnected) {
-        return step;
-      }
-      
-      if (step.fieldName && !userData[step.fieldName as keyof typeof userData]) {
-        console.log(`Missing field: ${step.fieldName}`);
-        return step;
+    // If not connected to Plaid, start with welcome
+    if (!userData.plaidConnected) {
+      console.log('Plaid not connected, returning welcome step');
+      return conversationSteps[0]; // welcome step
+    }
+
+    // Check each step in order after Plaid connection
+    for (let i = 1; i < conversationSteps.length; i++) {
+      const step = conversationSteps[i];
+      if (step.fieldName) {
+        const fieldValue = userData[step.fieldName as keyof typeof userData];
+        if (!fieldValue || fieldValue === '') {
+          console.log(`Missing field: ${step.fieldName}, returning step:`, step.id);
+          return step;
+        }
       }
     }
 
@@ -99,7 +108,7 @@ export const useConversationManager = () => {
       const valueEstimate = estimateVehicleValue(vehicleInfo);
       
       if (valueEstimate && valueEstimate.confidence !== 'low') {
-        // This will be handled by the parent component
+        console.log('Auto-setting vehicle price');
         return {
           id: 'auto-price-set',
           message: `Perfect! I found that vehicle. Based on current market data, a ${vehicleInfo?.year} ${vehicleInfo?.make} ${vehicleInfo?.model} is estimated at around $${valueEstimate.finalEstimate.toLocaleString()}.`,
@@ -109,6 +118,7 @@ export const useConversationManager = () => {
     }
 
     // All data collected - move to free chat
+    console.log('All data collected, returning complete step');
     return {
       id: 'complete',
       message: "Perfect! I have all the information I need. You can now ask me questions like 'Can I afford this car?' or click below to see your lender matches.",
@@ -120,7 +130,16 @@ export const useConversationManager = () => {
   useEffect(() => {
     const complete = checkDataComplete();
     setIsComplete(complete);
-    console.log('Data complete status:', complete);
+    console.log('Data complete status updated:', complete);
+  }, [userData]);
+
+  // Update current step when userData changes
+  useEffect(() => {
+    const nextStep = getNextStep();
+    if (nextStep) {
+      setCurrentStep(nextStep.id);
+      console.log('Current step updated to:', nextStep.id);
+    }
   }, [userData]);
 
   return {

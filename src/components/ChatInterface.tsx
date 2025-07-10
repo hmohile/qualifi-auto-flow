@@ -89,7 +89,7 @@ const ChatInterface = () => {
   };
 
   const continueConversation = () => {
-    console.log('Continuing conversation...');
+    console.log('continueConversation called');
     const nextStep = getNextStep();
     
     if (!nextStep) {
@@ -112,8 +112,8 @@ const ChatInterface = () => {
         }
       }
       addBotMessage(nextStep.message);
-      // Continue to next question after setting price
-      setTimeout(() => continueConversation(), 1500);
+      // Continue to next question after a brief delay
+      setTimeout(() => continueConversation(), 2000);
     } else {
       addBotMessage(nextStep.message, nextStep.component, nextStep.fieldName);
     }
@@ -126,6 +126,23 @@ const ChatInterface = () => {
       continueConversation();
     }
   }, []);
+
+  // Continue conversation when userData changes (but not on initial load)
+  useEffect(() => {
+    if (messages.length > 0 && conversationMode === 'onboarding') {
+      console.log('UserData changed, checking if we should continue conversation');
+      // Small delay to allow state to settle
+      const timer = setTimeout(() => {
+        const nextStep = getNextStep();
+        if (nextStep && nextStep.id !== 'welcome') {
+          console.log('Continuing conversation due to userData change');
+          continueConversation();
+        }
+      }, 500);
+      
+      return () => clearTimeout(timer);
+    }
+  }, [userData, conversationMode]);
 
   // Check if data is complete and switch modes
   useEffect(() => {
@@ -151,10 +168,6 @@ const ChatInterface = () => {
     
     setTimeout(() => {
       addBotMessage(`Excellent! I can see your income is ${data.monthlyIncome} per month and you have ${data.accountBalance} in your account. This puts you in a strong position for a great rate!`);
-      
-      setTimeout(() => {
-        continueConversation();
-      }, 1500);
     }, 1000);
     
     toast({
@@ -186,11 +199,6 @@ const ChatInterface = () => {
       const normalizedValue = normalizeInput(value);
       console.log(`Updating ${fieldName} with:`, normalizedValue);
       updateUserData({ [fieldName]: normalizedValue });
-      
-      // Continue conversation after a brief delay
-      setTimeout(() => {
-        continueConversation();
-      }, 1000);
     }
   };
 
