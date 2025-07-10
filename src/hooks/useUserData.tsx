@@ -1,7 +1,6 @@
-
 import { useState, useContext, createContext, ReactNode } from 'react';
 
-interface UserData {
+export interface UserData {
   fullName?: string;
   email?: string;
   phone?: string;
@@ -20,6 +19,14 @@ interface UserData {
   consentToCreditCheck?: boolean;
   plaidConnected?: boolean;
   accessToken?: string;
+  selectedLenderId?: string;
+  selectedOfferDetails?: {
+    lenderName: string;
+    apr: number;
+    monthlyPayment: number;
+    termLength: number;
+    selectedAt: string;
+  };
 }
 
 interface UserDataContextType {
