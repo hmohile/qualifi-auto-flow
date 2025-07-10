@@ -125,7 +125,7 @@ const LenderResults = ({ matches, borrowerSummary, realTimeQuotes = [] }: Lender
           <>
             {realTimeQuotes.map((quote, index) => (
               <Card 
-                key={quote.quoteId} 
+                key={quote.lenderId} 
                 className={`${index === 0 ? 'border-green-500 bg-green-50' : 'border-gray-200'} relative`}
               >
                 {index === 0 && (
@@ -141,7 +141,7 @@ const LenderResults = ({ matches, borrowerSummary, realTimeQuotes = [] }: Lender
                       <div className="flex items-center gap-2 mt-1">
                         <Zap className="h-4 w-4 text-yellow-500" />
                         <span className="text-sm text-green-600 font-medium">Live Quote</span>
-                        {quote.wasNegotiated && (
+                        {quote.status === 'negotiated' && (
                           <Badge variant="secondary" className="text-xs">Negotiated</Badge>
                         )}
                       </div>
@@ -163,32 +163,36 @@ const LenderResults = ({ matches, borrowerSummary, realTimeQuotes = [] }: Lender
                     </div>
                     <div>
                       <span className="text-sm text-gray-600">Loan Term</span>
-                      <div className="text-xl font-bold">{quote.termMonths} months</div>
+                      <div className="text-xl font-bold">{quote.termLength} months</div>
                     </div>
                     <div>
-                      <span className="text-sm text-gray-600">Total Amount</span>
-                      <div className="text-xl font-bold">${quote.loanAmount.toLocaleString()}</div>
+                      <span className="text-sm text-gray-600">Max Loan Amount</span>
+                      <div className="text-xl font-bold">${quote.maxLoanAmount.toLocaleString()}</div>
                     </div>
                     <div>
                       <span className="text-sm text-gray-600">Total Interest</span>
                       <div className="text-xl font-bold">
-                        ${((quote.monthlyPayment * quote.termMonths) - quote.loanAmount).toLocaleString()}
+                        ${((quote.monthlyPayment * quote.termLength) - quote.maxLoanAmount).toLocaleString()}
                       </div>
                     </div>
                   </div>
 
-                  {quote.fees && quote.fees.length > 0 && (
-                    <div className="mb-4">
-                      <span className="text-sm font-medium text-gray-700">Fees:</span>
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {quote.fees.map((fee, idx) => (
-                          <Badge key={idx} variant="outline" className="text-xs">
-                            {fee.type}: ${fee.amount}
-                          </Badge>
-                        ))}
-                      </div>
+                  <div className="mb-4">
+                    <span className="text-sm font-medium text-gray-700">Fees:</span>
+                    <div className="flex flex-wrap gap-1 mt-1">
+                      <Badge variant="outline" className="text-xs">
+                        Processing: ${quote.fees.processing}
+                      </Badge>
+                      {quote.fees.prepaymentPenalty > 0 && (
+                        <Badge variant="outline" className="text-xs">
+                          Prepayment: ${quote.fees.prepaymentPenalty}
+                        </Badge>
+                      )}
+                      <Badge variant="outline" className="text-xs">
+                        Documentation: ${quote.fees.documentation}
+                      </Badge>
                     </div>
-                  )}
+                  </div>
 
                   <div className="flex gap-2">
                     <Button 
@@ -203,7 +207,7 @@ const LenderResults = ({ matches, borrowerSummary, realTimeQuotes = [] }: Lender
                   </div>
 
                   <div className="text-xs text-gray-500 mt-2">
-                    Quote expires: {new Date(quote.expiresAt).toLocaleDateString()}
+                    Quote expires: {new Date(quote.expirationTime).toLocaleDateString()}
                   </div>
                 </CardContent>
               </Card>
