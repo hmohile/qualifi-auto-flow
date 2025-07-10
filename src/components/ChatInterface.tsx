@@ -1,13 +1,14 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Send, Bot, User, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useUserData } from "@/hooks/useUserData";
 import PlaidLinkButton from "@/components/PlaidLinkButton";
 import { parseVehicleInfo, estimateVehicleValue } from "@/utils/vehiclePricing";
 import { matchBorrowerToLenders } from "@/utils/lenderMatching";
+import MessageList from "./chat/MessageList";
+import UserInput from "./chat/UserInput";
+import { useConversationManager } from "./chat/ConversationManager";
+import { useFreeChatHandler } from "./chat/FreeChatHandler";
 
 interface Message {
   id: string;
@@ -20,15 +21,12 @@ interface Message {
 
 const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([]);
-  const [currentInput, setCurrentInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [lenderMatches, setLenderMatches] = useState<any>(null);
-  const [currentQuestionId, setCurrentQuestionId] = useState<string | null>(null);
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [isDataComplete, setIsDataComplete] = useState(false);
   const [conversationMode, setConversationMode] = useState<'onboarding' | 'free-chat' | 'complete'>('onboarding');
   const { userData, updateUserData } = useUserData();
-  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const { getNextStep, isComplete } = useConversationManager();
+  const { handleFreeChatQuestion } = useFreeChatHandler();
 
   // Normalize user input for better matching
   const normalizeInput = (input: string): string => {
@@ -64,216 +62,6 @@ const ChatInterface = () => {
     return input.trim();
   };
 
-  // Check if all required data is collected
-  const checkIfDataComplete = () => {
-    const required = [
-      'plaidConnected',
-      'dateOfBirth',
-      'employmentType',
-      'vehicleType',
-      'vinOrModel',
-      'downPayment',
-      'tradeInValue'
-    ];
-    
-    const hasAllRequired = required.every(field => {
-      const value = userData[field as keyof typeof userData];
-      return value !== undefined && value !== null && value !== '';
-    });
-
-    // Auto-set purchase price if we have vehicle info but no price
-    if (hasAllRequired && !userData.purchasePrice && userData.vinOrModel) {
-      const vehicleInfo = parseVehicleInfo(userData.vinOrModel);
-      const valueEstimate = estimateVehicleValue(vehicleInfo);
-      
-      if (valueEstimate && valueEstimate.confidence !== 'low') {
-        updateUserData({ purchasePrice: `$${valueEstimate.finalEstimate.toLocaleString()}` });
-      }
-    }
-
-    return hasAllRequired;
-  };
-
-  // Smart conversation flow - only ask for missing information
-  const getNextQuestion = () => {
-    console.log('Current userData:', userData);
-    console.log('Current question ID:', currentQuestionId);
-    
-    // After Plaid connection, check what we still need
-    if (!userData.plaidConnected) {
-      return {
-        id: 'welcome',
-        message: "Hi! I'm your AI auto loan assistant. I'll help you get pre-approved for the best auto loan rates in just a few minutes. First, let's securely connect your bank account to auto-fill your application.",
-        component: 'plaid-link' as const
-      };
-    }
-
-    // Essential missing information (not available from Plaid)
-    if (!userData.dateOfBirth) {
-      return {
-        id: 'dateOfBirth',
-        message: "Great! I have your financial information from your bank. I just need a few more details. What's your date of birth? (MM/DD/YYYY)",
-        component: 'input' as const,
-        fieldName: 'dateOfBirth'
-      };
-    }
-
-    if (!userData.employmentType) {
-      return {
-        id: 'employmentType',
-        message: "What's your employment type? (You can say 'full time', 'part time', 'self employed', etc.)",
-        component: 'input' as const,
-        fieldName: 'employmentType'
-      };
-    }
-
-    if (!userData.vehicleType) {
-      return {
-        id: 'vehicleType',
-        message: "Are you looking for a new or used vehicle?",
-        component: 'input' as const,
-        fieldName: 'vehicleType'
-      };
-    }
-
-    if (!userData.vinOrModel) {
-      return {
-        id: 'vinOrModel',
-        message: "What vehicle are you interested in? Please provide the VIN, or tell me the make/model/year (e.g., '2024 Toyota Camry'):",
-        component: 'input' as const,
-        fieldName: 'vinOrModel'
-      };
-    }
-
-    // Auto-determine purchase price from vehicle info, only ask if we can't figure it out
-    if (!userData.purchasePrice && userData.vinOrModel) {
-      const vehicleInfo = parseVehicleInfo(userData.vinOrModel);
-      const valueEstimate = estimateVehicleValue(vehicleInfo);
-      
-      if (valueEstimate && valueEstimate.confidence !== 'low') {
-        // Auto-set the price and continue
-        updateUserData({ purchasePrice: `$${valueEstimate.finalEstimate.toLocaleString()}` });
-        
-        return {
-          id: 'downPayment',
-          message: `Perfect! I found that vehicle. Based on current market data, a ${vehicleInfo?.year} ${vehicleInfo?.make} ${vehicleInfo?.model} is estimated at around $${valueEstimate.finalEstimate.toLocaleString()}. How much are you planning to put down as a down payment?`,
-          component: 'input' as const,
-          fieldName: 'downPayment'
-        };
-      } else {
-        return {
-          id: 'purchasePrice',
-          message: "I couldn't find reliable pricing data for that specific vehicle. What's the expected purchase price?",
-          component: 'input' as const,
-          fieldName: 'purchasePrice'
-        };
-      }
-    }
-
-    if (!userData.downPayment) {
-      return {
-        id: 'downPayment',
-        message: "How much are you planning to put down as a down payment?",
-        component: 'input' as const,
-        fieldName: 'downPayment'
-      };
-    }
-
-    if (!userData.tradeInValue) {
-      return {
-        id: 'tradeInValue',
-        message: "Do you have a trade-in vehicle? If so, what's its estimated value? (You can say 'no', 'none', or '$0' if no trade-in)",
-        component: 'input' as const,
-        fieldName: 'tradeInValue'
-      };
-    }
-
-    // All required data collected - move to free chat mode
-    return {
-      id: 'data-complete',
-      message: "Perfect! I have all the basic information I need. You can now ask me any additional questions about your auto loan, like 'Can I afford this car?' or 'What's my debt-to-income ratio?', or click below to see your lender matches.",
-      component: 'free-chat' as const
-    };
-  };
-
-  const handleFreeChatQuestion = async (question: string) => {
-    const lowerQ = question.toLowerCase();
-    
-    // Parse user financial data for context
-    const monthlyIncome = parseMoneyString(userData.monthlyIncome);
-    const vehiclePrice = parseMoneyString(userData.purchasePrice);
-    const downPayment = parseMoneyString(userData.downPayment);
-    const tradeInValue = parseMoneyString(userData.tradeInValue);
-    const accountBalance = parseMoneyString(userData.accountBalance);
-    const loanAmount = vehiclePrice - downPayment - tradeInValue;
-    
-    // Estimate monthly payment (assuming 6% APR, 60 months)
-    const estimatedPayment = calculateMonthlyPayment(loanAmount, 6, 60);
-    const debtToIncomeRatio = ((estimatedPayment / monthlyIncome) * 100).toFixed(1);
-    
-    let response = "";
-    
-    if (lowerQ.includes('afford') || lowerQ.includes('budget')) {
-      response = `Based on your profile:\n\n• Monthly Income: $${monthlyIncome.toLocaleString()}\n• Estimated Car Payment: $${estimatedPayment.toLocaleString()}\n• Debt-to-Income Ratio: ${debtToIncomeRatio}%\n\nGenerally, your car payment should be no more than 10-15% of your gross monthly income. Your estimated ratio of ${debtToIncomeRatio}% ${parseFloat(debtToIncomeRatio) <= 15 ? 'looks great!' : 'might be on the higher side - consider a lower-priced vehicle or larger down payment.'}`;
-    } else if (lowerQ.includes('debt') && lowerQ.includes('income')) {
-      response = `Your estimated debt-to-income ratio for this car loan would be ${debtToIncomeRatio}%. This is ${parseFloat(debtToIncomeRatio) <= 15 ? 'excellent' : parseFloat(debtToIncomeRatio) <= 20 ? 'good' : 'high'} for an auto loan. Lenders typically prefer to see auto loan DTI below 20%.`;
-    } else if (lowerQ.includes('payment') || lowerQ.includes('monthly')) {
-      response = `Based on the ${userData.vinOrModel} at $${vehiclePrice.toLocaleString()} with your $${(downPayment + tradeInValue).toLocaleString()} down payment, your estimated monthly payment would be around $${estimatedPayment.toLocaleString()} (assuming 6% APR over 60 months). This could vary based on the actual APR you qualify for.`;
-    } else if (lowerQ.includes('rate') || lowerQ.includes('apr') || lowerQ.includes('interest')) {
-      response = `Based on your income of $${monthlyIncome.toLocaleString()}/month and account balance of $${accountBalance.toLocaleString()}, you're likely to qualify for competitive rates. Typical APRs range from 4-8% for well-qualified buyers. Your exact rate will depend on your credit score and the lender's assessment.`;
-    } else if (lowerQ.includes('credit') || lowerQ.includes('score')) {
-      response = `I don't have access to your actual credit score, but based on your stable income and healthy account balance, you appear to be in good financial standing. Most lenders will pull your credit score during the application process to determine your exact rate.`;
-    } else if (lowerQ.includes('down payment') || lowerQ.includes('trade')) {
-      const totalDown = downPayment + tradeInValue;
-      const downPaymentPercent = ((totalDown / vehiclePrice) * 100).toFixed(1);
-      response = `Your total down payment of $${totalDown.toLocaleString()} (including trade-in) represents ${downPaymentPercent}% of the vehicle price. This is ${parseFloat(downPaymentPercent) >= 20 ? 'excellent' : parseFloat(downPaymentPercent) >= 10 ? 'good' : 'minimal'} - a larger down payment typically results in better loan terms.`;
-    } else {
-      response = `I'd be happy to help with that! Based on your profile, you're looking at a ${userData.vinOrModel} with a loan amount of about $${loanAmount.toLocaleString()}. Is there something specific about your auto loan or finances you'd like me to explain?`;
-    }
-    
-    return response;
-  };
-
-  const parseMoneyString = (value?: string): number => {
-    if (!value) return 0;
-    if (value === '$0') return 0;
-    return parseInt(value.replace(/[$,]/g, '')) || 0;
-  };
-
-  const calculateMonthlyPayment = (loanAmount: number, apr: number, termMonths: number): number => {
-    if (loanAmount <= 0 || apr <= 0) return 0;
-    const monthlyRate = apr / 100 / 12;
-    const payment = loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, termMonths)) / 
-                    (Math.pow(1 + monthlyRate, termMonths) - 1);
-    return Math.round(payment);
-  };
-
-  const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-  };
-
-  useEffect(() => {
-    scrollToBottom();
-  }, [messages]);
-
-  useEffect(() => {
-    // Check if data is complete
-    const dataComplete = checkIfDataComplete();
-    if (dataComplete && !isDataComplete) {
-      setIsDataComplete(true);
-      setConversationMode('free-chat');
-    }
-  }, [userData, isDataComplete]);
-
-  useEffect(() => {
-    // Start the conversation only once
-    if (messages.length === 0 && !isProcessing) {
-      const firstQuestion = getNextQuestion();
-      setCurrentQuestionId(firstQuestion.id);
-      addBotMessage(firstQuestion.message, firstQuestion.component, firstQuestion.fieldName);
-    }
-  }, [messages.length, isProcessing]);
-
   const addBotMessage = (content: string, component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results' | 'free-chat', fieldName?: string) => {
     setIsTyping(true);
     setTimeout(() => {
@@ -301,43 +89,54 @@ const ChatInterface = () => {
   };
 
   const continueConversation = () => {
-    if (isProcessing) {
-      console.log('Already processing, skipping...');
+    console.log('Continuing conversation...');
+    const nextStep = getNextStep();
+    
+    if (!nextStep) {
+      console.log('No next step found');
       return;
     }
-    
-    setIsProcessing(true);
-    
-    setTimeout(() => {
-      const nextQuestion = getNextQuestion();
-      
-      console.log('Next question:', nextQuestion.id, 'Current:', currentQuestionId);
-      
-      // Prevent asking the same question twice
-      if (nextQuestion.id === currentQuestionId && nextQuestion.id !== 'data-complete') {
-        console.log('Skipping duplicate question:', nextQuestion.id);
-        setIsProcessing(false);
-        return;
+
+    console.log('Next step:', nextStep);
+
+    if (nextStep.id === 'complete') {
+      setConversationMode('free-chat');
+      addBotMessage(nextStep.message, 'free-chat');
+    } else if (nextStep.id === 'auto-price-set') {
+      // Handle auto price setting
+      if (userData.vinOrModel) {
+        const vehicleInfo = parseVehicleInfo(userData.vinOrModel);
+        const valueEstimate = estimateVehicleValue(vehicleInfo);
+        if (valueEstimate && valueEstimate.confidence !== 'low') {
+          updateUserData({ purchasePrice: `$${valueEstimate.finalEstimate.toLocaleString()}` });
+        }
       }
-      
-      setCurrentQuestionId(nextQuestion.id);
-      
-      if (nextQuestion.id === 'data-complete') {
-        setConversationMode('free-chat');
-        addBotMessage(nextQuestion.message, nextQuestion.component);
-      } else {
-        addBotMessage(nextQuestion.message, nextQuestion.component, nextQuestion.fieldName);
-      }
-      
-      setIsProcessing(false);
-    }, 1000);
+      addBotMessage(nextStep.message);
+      // Continue to next question after setting price
+      setTimeout(() => continueConversation(), 1500);
+    } else {
+      addBotMessage(nextStep.message, nextStep.component, nextStep.fieldName);
+    }
   };
+
+  // Initialize conversation
+  useEffect(() => {
+    if (messages.length === 0) {
+      console.log('Initializing conversation');
+      continueConversation();
+    }
+  }, []);
+
+  // Check if data is complete and switch modes
+  useEffect(() => {
+    if (isComplete && conversationMode === 'onboarding') {
+      console.log('Data collection complete, switching to free chat');
+      setConversationMode('free-chat');
+    }
+  }, [isComplete, conversationMode]);
 
   const handlePlaidSuccess = (data: any) => {
     console.log('Plaid data received:', data);
-    
-    // Prevent multiple calls
-    if (isProcessing) return;
     
     updateUserData({
       plaidConnected: true,
@@ -353,11 +152,10 @@ const ChatInterface = () => {
     setTimeout(() => {
       addBotMessage(`Excellent! I can see your income is ${data.monthlyIncome} per month and you have ${data.accountBalance} in your account. This puts you in a strong position for a great rate!`);
       
-      // Small delay before continuing
       setTimeout(() => {
         continueConversation();
-      }, 500);
-    }, 1500);
+      }, 1500);
+    }, 1000);
     
     toast({
       title: "Bank Connected",
@@ -366,7 +164,7 @@ const ChatInterface = () => {
   };
 
   const handleInputSubmit = async (value: string, fieldName?: string) => {
-    if (!value.trim() || isProcessing) return;
+    if (!value.trim()) return;
     
     addUserMessage(value);
     
@@ -386,28 +184,17 @@ const ChatInterface = () => {
     } else if (fieldName) {
       // Handle structured data collection
       const normalizedValue = normalizeInput(value);
+      console.log(`Updating ${fieldName} with:`, normalizedValue);
       updateUserData({ [fieldName]: normalizedValue });
       
-      setCurrentInput("");
-      
-      // Small delay before continuing
+      // Continue conversation after a brief delay
       setTimeout(() => {
         continueConversation();
-      }, 500);
+      }, 1000);
     }
-    
-    setCurrentInput("");
-  };
-
-  const handleConsentChange = (field: string, checked: boolean) => {
-    updateUserData({
-      [field]: checked
-    });
   };
 
   const handleFindLenders = () => {
-    if (isProcessing) return;
-    
     console.log('Finding lenders for user data:', userData);
     setConversationMode('complete');
     
@@ -500,24 +287,13 @@ const ChatInterface = () => {
     
     if (message.component === 'input') {
       return (
-        <div className="mt-4 flex space-x-2">
-          <Input
-            value={currentInput}
-            onChange={(e) => setCurrentInput(e.target.value)}
+        <div className="mt-4">
+          <UserInput
+            onSubmit={handleInputSubmit}
+            fieldName={message.fieldName}
             placeholder="Type your answer..."
-            onKeyPress={(e) => {
-              if (e.key === 'Enter') {
-                handleInputSubmit(currentInput, message.fieldName);
-              }
-            }}
-            className="flex-1"
+            disabled={isTyping}
           />
-          <Button 
-            onClick={() => handleInputSubmit(currentInput, message.fieldName)}
-            disabled={!currentInput.trim() || isProcessing}
-          >
-            <Send className="h-4 w-4" />
-          </Button>
         </div>
       );
     }
@@ -525,66 +301,18 @@ const ChatInterface = () => {
     if (message.component === 'free-chat') {
       return (
         <div className="mt-4 space-y-4">
-          <div className="flex space-x-2">
-            <Input
-              value={currentInput}
-              onChange={(e) => setCurrentInput(e.target.value)}
-              placeholder="Ask me anything about your auto loan..."
-              onKeyPress={(e) => {
-                if (e.key === 'Enter') {
-                  handleInputSubmit(currentInput);
-                }
-              }}
-              className="flex-1"
-            />
-            <Button 
-              onClick={() => handleInputSubmit(currentInput)}
-              disabled={!currentInput.trim() || isProcessing}
-            >
-              <Send className="h-4 w-4" />
-            </Button>
-          </div>
+          <UserInput
+            onSubmit={handleInputSubmit}
+            placeholder="Ask me anything about your auto loan..."
+            disabled={isTyping}
+          />
           <Button 
             onClick={handleFindLenders}
-            disabled={isProcessing}
+            disabled={isTyping}
             className="w-full"
             size="lg"
           >
             Find My Lender Matches
-          </Button>
-        </div>
-      );
-    }
-    
-    if (message.component === 'checkbox') {
-      return (
-        <div className="mt-4 space-y-4">
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="consentToShare"
-              checked={userData.consentToShare || false}
-              onCheckedChange={(checked) => handleConsentChange('consentToShare', checked as boolean)}
-            />
-            <label htmlFor="consentToShare" className="text-sm">
-              I consent to share my information with potential lenders
-            </label>
-          </div>
-          <div className="flex items-center space-x-2">
-            <Checkbox 
-              id="consentToCreditCheck"
-              checked={userData.consentToCreditCheck || false}
-              onCheckedChange={(checked) => handleConsentChange('consentToCreditCheck', checked as boolean)}
-            />
-            <label htmlFor="consentToCreditCheck" className="text-sm">
-              I authorize a credit check to get accurate rates
-            </label>
-          </div>
-          <Button 
-            onClick={handleFindLenders}
-            disabled={!userData.consentToShare || !userData.consentToCreditCheck || isProcessing}
-            className="mt-4"
-          >
-            Find My Lenders
           </Button>
         </div>
       );
@@ -612,54 +340,12 @@ const ChatInterface = () => {
       {/* Chat Container */}
       <div className="container mx-auto max-w-4xl p-4">
         <div className="bg-card rounded-lg border shadow-sm min-h-[600px] flex flex-col">
-          {/* Messages */}
-          <div className="flex-1 p-6 space-y-6 overflow-y-auto">
-            {messages.map((message) => (
-              <div
-                key={message.id}
-                className={`flex gap-3 ${message.type === 'user' ? 'justify-end' : 'justify-start'}`}
-              >
-                {message.type === 'bot' && (
-                  <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
-                    <Bot className="h-4 w-4 text-primary-foreground" />
-                  </div>
-                )}
-                <div className={`max-w-[80%] ${message.type === 'user' ? 'order-first' : ''}`}>
-                  <div
-                    className={`p-4 rounded-lg ${
-                      message.type === 'user'
-                        ? 'bg-primary text-primary-foreground ml-auto'
-                        : 'bg-muted'
-                    }`}
-                  >
-                    <p className="text-sm">{message.content}</p>
-                    {renderMessageComponent(message)}
-                  </div>
-                </div>
-                {message.type === 'user' && (
-                  <div className="w-8 h-8 bg-secondary rounded-full flex items-center justify-center flex-shrink-0">
-                    <User className="h-4 w-4 text-secondary-foreground" />
-                  </div>
-                )}
-              </div>
-            ))}
-            
-            {isTyping && (
-              <div className="flex gap-3 justify-start">
-                <div className="w-8 h-8 bg-primary rounded-full flex items-center justify-center flex-shrink-0">
-                  <Bot className="h-4 w-4 text-primary-foreground" />
-                </div>
-                <div className="bg-muted p-4 rounded-lg">
-                  <div className="flex items-center space-x-2">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span className="text-sm">Typing...</span>
-                  </div>
-                </div>
-              </div>
-            )}
-            
-            <div ref={messagesEndRef} />
-          </div>
+          <MessageList 
+            messages={messages} 
+            isTyping={isTyping}
+          >
+            {renderMessageComponent}
+          </MessageList>
         </div>
       </div>
     </div>
