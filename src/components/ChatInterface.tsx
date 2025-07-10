@@ -14,7 +14,7 @@ interface Message {
   type: 'bot' | 'user';
   content: string;
   timestamp: Date;
-  component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results';
+  component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results' | 'free-chat';
   fieldName?: string;
 }
 
@@ -25,6 +25,8 @@ const ChatInterface = () => {
   const [lenderMatches, setLenderMatches] = useState<any>(null);
   const [currentQuestionId, setCurrentQuestionId] = useState<string | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [isDataComplete, setIsDataComplete] = useState(false);
+  const [conversationMode, setConversationMode] = useState<'onboarding' | 'free-chat' | 'complete'>('onboarding');
   const { userData, updateUserData } = useUserData();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -60,6 +62,36 @@ const ChatInterface = () => {
     }
     
     return input.trim();
+  };
+
+  // Check if all required data is collected
+  const checkIfDataComplete = () => {
+    const required = [
+      'plaidConnected',
+      'dateOfBirth',
+      'employmentType',
+      'vehicleType',
+      'vinOrModel',
+      'downPayment',
+      'tradeInValue'
+    ];
+    
+    const hasAllRequired = required.every(field => {
+      const value = userData[field as keyof typeof userData];
+      return value !== undefined && value !== null && value !== '';
+    });
+
+    // Auto-set purchase price if we have vehicle info but no price
+    if (hasAllRequired && !userData.purchasePrice && userData.vinOrModel) {
+      const vehicleInfo = parseVehicleInfo(userData.vinOrModel);
+      const valueEstimate = estimateVehicleValue(vehicleInfo);
+      
+      if (valueEstimate && valueEstimate.confidence !== 'low') {
+        updateUserData({ purchasePrice: `$${valueEstimate.finalEstimate.toLocaleString()}` });
+      }
+    }
+
+    return hasAllRequired;
   };
 
   // Smart conversation flow - only ask for missing information
@@ -156,20 +188,64 @@ const ChatInterface = () => {
       };
     }
 
-    if (!userData.consentToShare || !userData.consentToCreditCheck) {
-      return {
-        id: 'consent',
-        message: "Finally, I need your consent to find you the best loan matches:",
-        component: 'checkbox' as const
-      };
-    }
-
-    // All information collected, show results
+    // All required data collected - move to free chat mode
     return {
-      id: 'complete',
-      message: "Perfect! I have all the information I need. Let me find the best lenders for your situation...",
-      component: 'lender-results' as const
+      id: 'data-complete',
+      message: "Perfect! I have all the basic information I need. You can now ask me any additional questions about your auto loan, like 'Can I afford this car?' or 'What's my debt-to-income ratio?', or click below to see your lender matches.",
+      component: 'free-chat' as const
     };
+  };
+
+  const handleFreeChatQuestion = async (question: string) => {
+    const lowerQ = question.toLowerCase();
+    
+    // Parse user financial data for context
+    const monthlyIncome = parseMoneyString(userData.monthlyIncome);
+    const vehiclePrice = parseMoneyString(userData.purchasePrice);
+    const downPayment = parseMoneyString(userData.downPayment);
+    const tradeInValue = parseMoneyString(userData.tradeInValue);
+    const accountBalance = parseMoneyString(userData.accountBalance);
+    const loanAmount = vehiclePrice - downPayment - tradeInValue;
+    
+    // Estimate monthly payment (assuming 6% APR, 60 months)
+    const estimatedPayment = calculateMonthlyPayment(loanAmount, 6, 60);
+    const debtToIncomeRatio = ((estimatedPayment / monthlyIncome) * 100).toFixed(1);
+    
+    let response = "";
+    
+    if (lowerQ.includes('afford') || lowerQ.includes('budget')) {
+      response = `Based on your profile:\n\n• Monthly Income: $${monthlyIncome.toLocaleString()}\n• Estimated Car Payment: $${estimatedPayment.toLocaleString()}\n• Debt-to-Income Ratio: ${debtToIncomeRatio}%\n\nGenerally, your car payment should be no more than 10-15% of your gross monthly income. Your estimated ratio of ${debtToIncomeRatio}% ${parseFloat(debtToIncomeRatio) <= 15 ? 'looks great!' : 'might be on the higher side - consider a lower-priced vehicle or larger down payment.'}`;
+    } else if (lowerQ.includes('debt') && lowerQ.includes('income')) {
+      response = `Your estimated debt-to-income ratio for this car loan would be ${debtToIncomeRatio}%. This is ${parseFloat(debtToIncomeRatio) <= 15 ? 'excellent' : parseFloat(debtToIncomeRatio) <= 20 ? 'good' : 'high'} for an auto loan. Lenders typically prefer to see auto loan DTI below 20%.`;
+    } else if (lowerQ.includes('payment') || lowerQ.includes('monthly')) {
+      response = `Based on the ${userData.vinOrModel} at $${vehiclePrice.toLocaleString()} with your $${(downPayment + tradeInValue).toLocaleString()} down payment, your estimated monthly payment would be around $${estimatedPayment.toLocaleString()} (assuming 6% APR over 60 months). This could vary based on the actual APR you qualify for.`;
+    } else if (lowerQ.includes('rate') || lowerQ.includes('apr') || lowerQ.includes('interest')) {
+      response = `Based on your income of $${monthlyIncome.toLocaleString()}/month and account balance of $${accountBalance.toLocaleString()}, you're likely to qualify for competitive rates. Typical APRs range from 4-8% for well-qualified buyers. Your exact rate will depend on your credit score and the lender's assessment.`;
+    } else if (lowerQ.includes('credit') || lowerQ.includes('score')) {
+      response = `I don't have access to your actual credit score, but based on your stable income and healthy account balance, you appear to be in good financial standing. Most lenders will pull your credit score during the application process to determine your exact rate.`;
+    } else if (lowerQ.includes('down payment') || lowerQ.includes('trade')) {
+      const totalDown = downPayment + tradeInValue;
+      const downPaymentPercent = ((totalDown / vehiclePrice) * 100).toFixed(1);
+      response = `Your total down payment of $${totalDown.toLocaleString()} (including trade-in) represents ${downPaymentPercent}% of the vehicle price. This is ${parseFloat(downPaymentPercent) >= 20 ? 'excellent' : parseFloat(downPaymentPercent) >= 10 ? 'good' : 'minimal'} - a larger down payment typically results in better loan terms.`;
+    } else {
+      response = `I'd be happy to help with that! Based on your profile, you're looking at a ${userData.vinOrModel} with a loan amount of about $${loanAmount.toLocaleString()}. Is there something specific about your auto loan or finances you'd like me to explain?`;
+    }
+    
+    return response;
+  };
+
+  const parseMoneyString = (value?: string): number => {
+    if (!value) return 0;
+    if (value === '$0') return 0;
+    return parseInt(value.replace(/[$,]/g, '')) || 0;
+  };
+
+  const calculateMonthlyPayment = (loanAmount: number, apr: number, termMonths: number): number => {
+    if (loanAmount <= 0 || apr <= 0) return 0;
+    const monthlyRate = apr / 100 / 12;
+    const payment = loanAmount * (monthlyRate * Math.pow(1 + monthlyRate, termMonths)) / 
+                    (Math.pow(1 + monthlyRate, termMonths) - 1);
+    return Math.round(payment);
   };
 
   const scrollToBottom = () => {
@@ -181,6 +257,15 @@ const ChatInterface = () => {
   }, [messages]);
 
   useEffect(() => {
+    // Check if data is complete
+    const dataComplete = checkIfDataComplete();
+    if (dataComplete && !isDataComplete) {
+      setIsDataComplete(true);
+      setConversationMode('free-chat');
+    }
+  }, [userData, isDataComplete]);
+
+  useEffect(() => {
     // Start the conversation only once
     if (messages.length === 0 && !isProcessing) {
       const firstQuestion = getNextQuestion();
@@ -189,7 +274,7 @@ const ChatInterface = () => {
     }
   }, [messages.length, isProcessing]);
 
-  const addBotMessage = (content: string, component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results', fieldName?: string) => {
+  const addBotMessage = (content: string, component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results' | 'free-chat', fieldName?: string) => {
     setIsTyping(true);
     setTimeout(() => {
       const newMessage: Message = {
@@ -229,7 +314,7 @@ const ChatInterface = () => {
       console.log('Next question:', nextQuestion.id, 'Current:', currentQuestionId);
       
       // Prevent asking the same question twice
-      if (nextQuestion.id === currentQuestionId) {
+      if (nextQuestion.id === currentQuestionId && nextQuestion.id !== 'data-complete') {
         console.log('Skipping duplicate question:', nextQuestion.id);
         setIsProcessing(false);
         return;
@@ -237,10 +322,8 @@ const ChatInterface = () => {
       
       setCurrentQuestionId(nextQuestion.id);
       
-      if (nextQuestion.id === 'complete') {
-        // Process lender matching
-        const matches = matchBorrowerToLenders(userData);
-        setLenderMatches(matches);
+      if (nextQuestion.id === 'data-complete') {
+        setConversationMode('free-chat');
         addBotMessage(nextQuestion.message, nextQuestion.component);
       } else {
         addBotMessage(nextQuestion.message, nextQuestion.component, nextQuestion.fieldName);
@@ -282,22 +365,38 @@ const ChatInterface = () => {
     });
   };
 
-  const handleInputSubmit = (value: string, fieldName?: string) => {
+  const handleInputSubmit = async (value: string, fieldName?: string) => {
     if (!value.trim() || isProcessing) return;
     
-    const normalizedValue = normalizeInput(value);
     addUserMessage(value);
     
-    if (fieldName) {
+    if (conversationMode === 'free-chat' && !fieldName) {
+      // Handle free-form questions
+      setIsTyping(true);
+      try {
+        const response = await handleFreeChatQuestion(value);
+        setTimeout(() => {
+          addBotMessage(response, 'free-chat');
+        }, 1000);
+      } catch (error) {
+        setTimeout(() => {
+          addBotMessage("I'm sorry, I had trouble processing that question. Could you try rephrasing it?", 'free-chat');
+        }, 1000);
+      }
+    } else if (fieldName) {
+      // Handle structured data collection
+      const normalizedValue = normalizeInput(value);
       updateUserData({ [fieldName]: normalizedValue });
+      
+      setCurrentInput("");
+      
+      // Small delay before continuing
+      setTimeout(() => {
+        continueConversation();
+      }, 500);
     }
     
     setCurrentInput("");
-    
-    // Small delay before continuing
-    setTimeout(() => {
-      continueConversation();
-    }, 500);
   };
 
   const handleConsentChange = (field: string, checked: boolean) => {
@@ -306,16 +405,21 @@ const ChatInterface = () => {
     });
   };
 
-  const handleSubmitApplication = () => {
+  const handleFindLenders = () => {
     if (isProcessing) return;
     
-    console.log('Final user data:', userData);
+    console.log('Finding lenders for user data:', userData);
+    setConversationMode('complete');
+    
+    const matches = matchBorrowerToLenders(userData);
+    setLenderMatches(matches);
+    
+    addBotMessage("Perfect! Let me find the best lenders for your situation...", 'lender-results');
+    
     toast({
       title: "Finding Your Matches",
       description: "We're analyzing your profile against our lender network...",
     });
-    
-    continueConversation();
   };
 
   const renderLenderResults = () => {
@@ -417,6 +521,40 @@ const ChatInterface = () => {
         </div>
       );
     }
+
+    if (message.component === 'free-chat') {
+      return (
+        <div className="mt-4 space-y-4">
+          <div className="flex space-x-2">
+            <Input
+              value={currentInput}
+              onChange={(e) => setCurrentInput(e.target.value)}
+              placeholder="Ask me anything about your auto loan..."
+              onKeyPress={(e) => {
+                if (e.key === 'Enter') {
+                  handleInputSubmit(currentInput);
+                }
+              }}
+              className="flex-1"
+            />
+            <Button 
+              onClick={() => handleInputSubmit(currentInput)}
+              disabled={!currentInput.trim() || isProcessing}
+            >
+              <Send className="h-4 w-4" />
+            </Button>
+          </div>
+          <Button 
+            onClick={handleFindLenders}
+            disabled={isProcessing}
+            className="w-full"
+            size="lg"
+          >
+            Find My Lender Matches
+          </Button>
+        </div>
+      );
+    }
     
     if (message.component === 'checkbox') {
       return (
@@ -442,7 +580,7 @@ const ChatInterface = () => {
             </label>
           </div>
           <Button 
-            onClick={handleSubmitApplication}
+            onClick={handleFindLenders}
             disabled={!userData.consentToShare || !userData.consentToCreditCheck || isProcessing}
             className="mt-4"
           >
