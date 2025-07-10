@@ -11,23 +11,49 @@ interface PlaidLinkButtonProps {
 const PlaidLinkButton = ({ onSuccess }: PlaidLinkButtonProps) => {
   const [isConnecting, setIsConnecting] = useState(false);
 
+  // Generate more realistic mock data
+  const generateMockPlaidData = () => {
+    const incomes = ["$3,200", "$4,500", "$5,800", "$6,500", "$7,200", "$8,900", "$10,400"];
+    const balances = ["$2,400", "$5,600", "$8,900", "$12,300", "$18,500", "$25,000", "$32,100"];
+    const names = [
+      "Sarah Johnson", "Michael Chen", "Jessica Rodriguez", "David Thompson", 
+      "Emily Davis", "James Wilson", "Ashley Brown", "Christopher Lee"
+    ];
+    const employers = [
+      "Microsoft Corporation", "Amazon Web Services", "Johnson & Johnson", 
+      "Wells Fargo Bank", "Apple Inc", "Google LLC", "Tesla Inc", 
+      "JPMorgan Chase", "Salesforce", "Adobe Systems"
+    ];
+    
+    const randomIncome = incomes[Math.floor(Math.random() * incomes.length)];
+    const randomBalance = balances[Math.floor(Math.random() * balances.length)];
+    const randomName = names[Math.floor(Math.random() * names.length)];
+    const randomEmployer = employers[Math.floor(Math.random() * employers.length)];
+    
+    // Generate email from name
+    const emailName = randomName.toLowerCase().replace(" ", ".");
+    const emailDomains = ["gmail.com", "yahoo.com", "hotmail.com", "outlook.com"];
+    const randomEmail = `${emailName}@${emailDomains[Math.floor(Math.random() * emailDomains.length)]}`;
+    
+    return {
+      fullName: randomName,
+      email: randomEmail,
+      phone: `(${Math.floor(Math.random() * 900) + 100}) ${Math.floor(Math.random() * 900) + 100}-${Math.floor(Math.random() * 9000) + 1000}`,
+      employerName: randomEmployer,
+      monthlyIncome: randomIncome,
+      accountBalance: randomBalance,
+      accessToken: `plaid_access_token_${Date.now()}`
+    };
+  };
+
   const handleConnect = async () => {
     setIsConnecting(true);
     
     // Simulate Plaid connection process
     try {
-      // In a real implementation, this would integrate with Plaid Link
       setTimeout(() => {
-        // Mock successful connection with sample data
-        const mockPlaidData = {
-          fullName: "John Doe",
-          email: "john.doe@email.com",
-          phone: "(555) 123-4567",
-          employerName: "Tech Solutions Inc",
-          monthlyIncome: "$6,500",
-          accountBalance: "$18,500",
-          accessToken: "mock_access_token_123"
-        };
+        const mockPlaidData = generateMockPlaidData();
+        console.log('Generated mock Plaid data:', mockPlaidData);
         
         onSuccess(mockPlaidData);
         setIsConnecting(false);

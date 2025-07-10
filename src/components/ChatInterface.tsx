@@ -23,13 +23,49 @@ const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentInput, setCurrentInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [currentStep, setCurrentStep] = useState(0);
   const [lenderMatches, setLenderMatches] = useState<any>(null);
+  const [currentQuestionId, setCurrentQuestionId] = useState<string | null>(null);
   const { userData, updateUserData } = useUserData();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  // Normalize user input for better matching
+  const normalizeInput = (input: string): string => {
+    const normalized = input.toLowerCase().trim();
+    
+    // Employment type normalization
+    if (normalized.includes('full time') || normalized === 'fulltime') {
+      return 'Full-time';
+    }
+    if (normalized.includes('part time') || normalized === 'parttime') {
+      return 'Part-time';
+    }
+    if (normalized.includes('self employ') || normalized.includes('freelance') || normalized.includes('contractor')) {
+      return 'Self-employed';
+    }
+    if (normalized.includes('retire')) {
+      return 'Retired';
+    }
+    
+    // Vehicle type normalization
+    if (normalized.includes('new')) {
+      return 'New';
+    }
+    if (normalized.includes('used') || normalized.includes('pre-owned') || normalized.includes('second hand')) {
+      return 'Used';
+    }
+    
+    // None/zero normalization
+    if (normalized === 'no' || normalized === 'none' || normalized === 'nothing' || normalized === '0' || normalized === '$0') {
+      return '$0';
+    }
+    
+    return input.trim();
+  };
+
   // Smart conversation flow - only ask for missing information
   const getNextQuestion = () => {
+    console.log('Current userData:', userData);
+    
     // After Plaid connection, check what we still need
     if (!userData.plaidConnected) {
       return {
@@ -43,7 +79,7 @@ const ChatInterface = () => {
     if (!userData.dateOfBirth) {
       return {
         id: 'dateOfBirth',
-        message: "Perfect! I have your financial information. I just need a few more details. What's your date of birth? (MM/DD/YYYY)",
+        message: "Great! I have your financial information from your bank. I just need a few more details. What's your date of birth? (MM/DD/YYYY)",
         component: 'input' as const,
         fieldName: 'dateOfBirth'
       };
@@ -52,7 +88,7 @@ const ChatInterface = () => {
     if (!userData.employmentType) {
       return {
         id: 'employmentType',
-        message: "What's your employment type? (Full-time, Part-time, Self-employed, etc.)",
+        message: "What's your employment type? (You can say 'full time', 'part time', 'self employed', etc.)",
         component: 'input' as const,
         fieldName: 'employmentType'
       };
@@ -70,7 +106,7 @@ const ChatInterface = () => {
     if (!userData.vinOrModel) {
       return {
         id: 'vinOrModel',
-        message: "What vehicle are you interested in? Please provide the VIN, or just tell me the make/model/year (e.g., '2024 Toyota Camry'):",
+        message: "What vehicle are you interested in? Please provide the VIN, or tell me the make/model/year (e.g., '2024 Toyota Camry'):",
         component: 'input' as const,
         fieldName: 'vinOrModel'
       };
@@ -87,14 +123,14 @@ const ChatInterface = () => {
         
         return {
           id: 'downPayment',
-          message: `Great! I found that vehicle. Based on current market data, a ${vehicleInfo?.year} ${vehicleInfo?.make} ${vehicleInfo?.model} is estimated at around $${valueEstimate.finalEstimate.toLocaleString()}. How much are you planning to put down as a down payment?`,
+          message: `Perfect! I found that vehicle. Based on current market data, a ${vehicleInfo?.year} ${vehicleInfo?.make} ${vehicleInfo?.model} is estimated at around $${valueEstimate.finalEstimate.toLocaleString()}. How much are you planning to put down as a down payment?`,
           component: 'input' as const,
           fieldName: 'downPayment'
         };
       } else {
         return {
           id: 'purchasePrice',
-          message: "I couldn't find pricing data for that specific vehicle. What's the expected purchase price?",
+          message: "I couldn't find reliable pricing data for that specific vehicle. What's the expected purchase price?",
           component: 'input' as const,
           fieldName: 'purchasePrice'
         };
@@ -113,7 +149,7 @@ const ChatInterface = () => {
     if (!userData.tradeInValue) {
       return {
         id: 'tradeInValue',
-        message: "Do you have a trade-in vehicle? If so, what's its estimated value? (Enter '$0' or 'none' if no trade-in)",
+        message: "Do you have a trade-in vehicle? If so, what's its estimated value? (You can say 'no', 'none', or '$0' if no trade-in)",
         component: 'input' as const,
         fieldName: 'tradeInValue'
       };
@@ -144,9 +180,12 @@ const ChatInterface = () => {
   }, [messages]);
 
   useEffect(() => {
-    // Start the conversation
-    const firstQuestion = getNextQuestion();
-    addBotMessage(firstQuestion.message, firstQuestion.component, firstQuestion.fieldName);
+    // Start the conversation only once
+    if (messages.length === 0) {
+      const firstQuestion = getNextQuestion();
+      setCurrentQuestionId(firstQuestion.id);
+      addBotMessage(firstQuestion.message, firstQuestion.component, firstQuestion.fieldName);
+    }
   }, []);
 
   const addBotMessage = (content: string, component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results', fieldName?: string) => {
@@ -178,6 +217,15 @@ const ChatInterface = () => {
   const continueConversation = () => {
     setTimeout(() => {
       const nextQuestion = getNextQuestion();
+      
+      // Prevent asking the same question twice
+      if (nextQuestion.id === currentQuestionId) {
+        console.log('Skipping duplicate question:', nextQuestion.id);
+        return;
+      }
+      
+      setCurrentQuestionId(nextQuestion.id);
+      
       if (nextQuestion.id === 'complete') {
         // Process lender matching
         const matches = matchBorrowerToLenders(userData);
@@ -193,17 +241,17 @@ const ChatInterface = () => {
     console.log('Plaid data received:', data);
     updateUserData({
       plaidConnected: true,
-      fullName: data.fullName || "John Doe",
-      email: data.email || "john@example.com",
-      monthlyIncome: data.monthlyIncome || "$5,000",
-      accountBalance: data.accountBalance || "$15,000",
-      employerName: data.employerName || "Tech Corp"
+      fullName: data.fullName,
+      email: data.email,
+      monthlyIncome: data.monthlyIncome,
+      accountBalance: data.accountBalance,
+      employerName: data.employerName
     });
     
     addUserMessage("✅ Bank account connected successfully!");
     
     setTimeout(() => {
-      addBotMessage("Excellent! I can see your income is " + (data.monthlyIncome || "$5,000") + " per month and you have " + (data.accountBalance || "$15,000") + " in your account. This puts you in a strong position for a great rate!");
+      addBotMessage(`Excellent! I can see your income is ${data.monthlyIncome} per month and you have ${data.accountBalance} in your account. This puts you in a strong position for a great rate!`);
       continueConversation();
     }, 1500);
     
@@ -216,15 +264,11 @@ const ChatInterface = () => {
   const handleInputSubmit = (value: string, fieldName?: string) => {
     if (!value.trim()) return;
     
+    const normalizedValue = normalizeInput(value);
     addUserMessage(value);
     
     if (fieldName) {
-      // Clean up trade-in value if user says none/0
-      if (fieldName === 'tradeInValue' && (value.toLowerCase().includes('none') || value.toLowerCase().includes('no') || value === '0')) {
-        updateUserData({ [fieldName]: '$0' });
-      } else {
-        updateUserData({ [fieldName]: value });
-      }
+      updateUserData({ [fieldName]: normalizedValue });
     }
     
     setCurrentInput("");
