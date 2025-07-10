@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from 'react';
 import { useUserData } from '@/hooks/useUserData';
 import { parseVehicleInfo, estimateVehicleValue } from '@/utils/vehiclePricing';
@@ -16,6 +15,7 @@ export const useConversationManager = () => {
   const [currentStep, setCurrentStep] = useState<string>('welcome');
   const [isComplete, setIsComplete] = useState(false);
   const [shouldShowLenderMatching, setShouldShowLenderMatching] = useState(false);
+  const [completionMessageShown, setCompletionMessageShown] = useState(false);
 
   // Define conversation steps in order
   const conversationSteps: ConversationStep[] = [
@@ -84,6 +84,11 @@ export const useConversationManager = () => {
   const getNextStep = (): ConversationStep | null => {
     console.log('Getting next step, current userData:', userData);
     
+    // If data is complete and completion message already shown, don't return anything
+    if (isComplete && completionMessageShown) {
+      return null;
+    }
+    
     // If not connected to Plaid, start with welcome
     if (!userData.plaidConnected) {
       console.log('Plaid not connected, returning welcome step');
@@ -117,13 +122,17 @@ export const useConversationManager = () => {
       }
     }
 
-    // All data collected - show completion message
-    console.log('All data collected, returning completion step');
-    return {
-      id: 'complete',
-      message: "Perfect! I have all the information I need. You can now ask me questions like 'Can I afford this car?' or click the button below to see your personalized lender matches.",
-      component: 'free-chat'
-    };
+    // All data collected - show completion message only once
+    if (!completionMessageShown) {
+      console.log('All data collected, returning completion step');
+      return {
+        id: 'complete',
+        message: "Perfect! I have all the information I need. You can now ask me questions like 'Can I afford this car?' or click the button below to see your personalized lender matches.",
+        component: 'free-chat'
+      };
+    }
+
+    return null;
   };
 
   // Get missing fields for user feedback
@@ -177,6 +186,8 @@ export const useConversationManager = () => {
     setShouldShowLenderMatching,
     getNextStep,
     getMissingFields,
-    conversationSteps
+    conversationSteps,
+    completionMessageShown,
+    setCompletionMessageShown
   };
 };

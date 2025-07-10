@@ -1,4 +1,3 @@
-
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -11,6 +10,8 @@ import UserInput from "./chat/UserInput";
 import { useConversationManager } from "./chat/ConversationManager";
 import { useFreeChatHandler } from "./chat/FreeChatHandler";
 import LenderResults from "./LenderResults";
+import QuoteCollection from "./QuoteCollection";
+import { LenderQuote } from "@/services/mockLenderAPI";
 
 interface Message {
   id: string;
@@ -26,12 +27,16 @@ const ChatInterface = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [lenderMatches, setLenderMatches] = useState<any>(null);
   const [showLenderResults, setShowLenderResults] = useState(false);
+  const [showQuoteCollection, setShowQuoteCollection] = useState(false);
+  const [realTimeQuotes, setRealTimeQuotes] = useState<LenderQuote[]>([]);
   const { userData, updateUserData } = useUserData();
   const { 
     getNextStep, 
     isComplete, 
     shouldShowLenderMatching,
-    getMissingFields 
+    getMissingFields,
+    completionMessageShown,
+    setCompletionMessageShown
   } = useConversationManager();
   const { handleFreeChatQuestion } = useFreeChatHandler();
 
@@ -98,8 +103,8 @@ const ChatInterface = () => {
   const continueConversation = () => {
     console.log('continueConversation called, isComplete:', isComplete);
     
-    if (isComplete) {
-      console.log('Data complete, not continuing conversation');
+    if (isComplete && completionMessageShown) {
+      console.log('Data complete and completion message shown, not continuing conversation');
       return;
     }
     
@@ -114,6 +119,7 @@ const ChatInterface = () => {
 
     if (nextStep.id === 'complete') {
       addBotMessage(nextStep.message, 'free-chat');
+      setCompletionMessageShown(true);
     } else if (nextStep.id === 'auto-price-set') {
       // Handle auto price setting
       if (userData.vinOrModel) {
@@ -243,6 +249,45 @@ const ChatInterface = () => {
     });
   };
 
+  const handleStartQuoteCollection = () => {
+    if (!isComplete) {
+      const missingFields = getMissingFields();
+      toast({
+        title: "Missing Information",
+        description: `Please provide: ${missingFields.join(', ')}`,
+        variant: "destructive"
+      });
+      return;
+    }
+    
+    setShowQuoteCollection(true);
+    
+    toast({
+      title: "Starting AI Quote Collection",
+      description: "Our AI agent will contact lenders and negotiate on your behalf...",
+    });
+  };
+
+  const handleQuotesReady = (quotes: LenderQuote[]) => {
+    setRealTimeQuotes(quotes);
+    setShowQuoteCollection(false);
+    setShowLenderResults(true);
+    
+    // Update lender matches with real quotes
+    if (lenderMatches) {
+      const updatedMatches = {
+        ...lenderMatches,
+        realTimeQuotes: quotes
+      };
+      setLenderMatches(updatedMatches);
+    }
+    
+    toast({
+      title: "Quotes Ready!",
+      description: `Received ${quotes.length} live quotes from lenders.`,
+    });
+  };
+
   const renderLenderResults = () => {
     if (!lenderMatches) return null;
 
@@ -286,24 +331,44 @@ const ChatInterface = () => {
             placeholder="Ask me anything about your auto loan..."
             disabled={isTyping}
           />
-          <Button 
-            onClick={handleFindLenders}
-            disabled={isTyping}
-            className="w-full"
-            size="lg"
-          >
-            {isComplete ? "Find My Lender Matches" : "Check My Information & Find Lenders"}
-          </Button>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <Button 
+              onClick={handleStartQuoteCollection}
+              disabled={isTyping}
+              size="lg"
+              className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+            >
+              🤖 AI Quote Collection
+            </Button>
+            <Button 
+              onClick={handleFindLenders}
+              disabled={isTyping}
+              variant="outline"
+              size="lg"
+            >
+              📊 View Estimated Matches
+            </Button>
+          </div>
+          <p className="text-xs text-gray-500 text-center">
+            AI Quote Collection contacts real lenders and negotiates better rates automatically
+          </p>
         </div>
       );
     }
 
-    if (message.component === 'lender-results') {
-      return renderLenderResults();
-    }
-    
     return null;
   };
+
+  // Handle Quote Collection View
+  if (showQuoteCollection) {
+    return (
+      <QuoteCollection
+        borrowerProfile={userData}
+        onQuotesReady={handleQuotesReady}
+        onBack={() => setShowQuoteCollection(false)}
+      />
+    );
+  }
 
   if (showLenderResults) {
     return (
@@ -319,8 +384,16 @@ const ChatInterface = () => {
               >
                 Back to Chat
               </Button>
+              {isComplete && (
+                <Button 
+                  onClick={handleStartQuoteCollection}
+                  className="bg-gradient-to-r from-blue-600 to-purple-600 hover:from-blue-700 hover:to-purple-700"
+                >
+                  🤖 Get Live Quotes
+                </Button>
+              )}
               <div className="text-sm text-muted-foreground">
-                Your Lender Matches
+                {realTimeQuotes.length > 0 ? 'Live Quotes' : 'Estimated Matches'}
               </div>
             </div>
           </div>
@@ -328,7 +401,13 @@ const ChatInterface = () => {
 
         {/* Lender Results */}
         <div className="container mx-auto max-w-6xl p-4">
-          {renderLenderResults()}
+          {lenderMatches && (
+            <LenderResults 
+              matches={lenderMatches.matches}
+              borrowerSummary={lenderMatches.borrowerSummary}
+              realTimeQuotes={realTimeQuotes}
+            />
+          )}
         </div>
       </div>
     );
