@@ -2,10 +2,10 @@
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Send, Bot, User, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { useUserData } from "@/hooks/useUserData";
 import PlaidLinkButton from "@/components/PlaidLinkButton";
 
 interface Message {
@@ -17,32 +17,12 @@ interface Message {
   fieldName?: string;
 }
 
-interface UserData {
-  fullName?: string;
-  email?: string;
-  phone?: string;
-  dateOfBirth?: string;
-  ssn?: string;
-  employmentType?: string;
-  employerName?: string;
-  vehicleType?: string;
-  vinOrModel?: string;
-  purchasePrice?: string;
-  downPayment?: string;
-  tradeInValue?: string;
-  monthlyIncome?: string;
-  accountBalance?: string;
-  consentToShare?: boolean;
-  consentToCreditCheck?: boolean;
-  plaidConnected?: boolean;
-}
-
 const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [currentInput, setCurrentInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
-  const [userData, setUserData] = useState<UserData>({});
   const [currentStep, setCurrentStep] = useState(0);
+  const { userData, updateUserData } = useUserData();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const conversationFlow = [
@@ -141,16 +121,14 @@ const ChatInterface = () => {
 
   const handlePlaidSuccess = (data: any) => {
     console.log('Plaid data received:', data);
-    setUserData(prev => ({
-      ...prev,
+    updateUserData({
       plaidConnected: true,
-      // Mock data that would come from Plaid
       fullName: data.fullName || "John Doe",
       email: data.email || "john@example.com",
       monthlyIncome: data.monthlyIncome || "$5,000",
       accountBalance: data.accountBalance || "$15,000",
       employerName: data.employerName || "Tech Corp"
-    }));
+    });
     
     addUserMessage("✅ Bank account connected successfully!");
     
@@ -174,10 +152,9 @@ const ChatInterface = () => {
     addUserMessage(value);
     
     if (fieldName) {
-      setUserData(prev => ({
-        ...prev,
+      updateUserData({
         [fieldName]: value
-      }));
+      });
     }
     
     setCurrentInput("");
@@ -203,10 +180,9 @@ const ChatInterface = () => {
   };
 
   const handleConsentChange = (field: string, checked: boolean) => {
-    setUserData(prev => ({
-      ...prev,
+    updateUserData({
       [field]: checked
-    }));
+    });
   };
 
   const handleSubmitApplication = () => {
@@ -216,7 +192,6 @@ const ChatInterface = () => {
       description: "We're processing your application and will show you loan options shortly.",
     });
     
-    // Here you would typically save to database and redirect to results
     addBotMessage("🎉 Your application has been submitted! We're now matching you with the best lenders. This usually takes 30-60 seconds...");
   };
 
