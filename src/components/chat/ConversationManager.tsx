@@ -15,6 +15,7 @@ export const useConversationManager = () => {
   const { userData } = useUserData();
   const [currentStep, setCurrentStep] = useState<string>('welcome');
   const [isComplete, setIsComplete] = useState(false);
+  const [shouldShowLenderMatching, setShouldShowLenderMatching] = useState(false);
 
   // Define conversation steps in order
   const conversationSteps: ConversationStep[] = [
@@ -71,18 +72,17 @@ export const useConversationManager = () => {
   // Check if all required data is collected
   const checkDataComplete = () => {
     const requiredFields = ['plaidConnected', 'dateOfBirth', 'employmentType', 'vehicleType', 'vinOrModel', 'downPayment', 'tradeInValue'];
-    const isComplete = requiredFields.every(field => {
+    const complete = requiredFields.every(field => {
       const value = userData[field as keyof typeof userData];
       return value !== undefined && value !== null && value !== '';
     });
-    console.log('Data completeness check:', { requiredFields, userData, isComplete });
-    return isComplete;
+    console.log('Data completeness check:', { requiredFields, userData, complete });
+    return complete;
   };
 
   // Get the next step in the conversation
   const getNextStep = (): ConversationStep | null => {
     console.log('Getting next step, current userData:', userData);
-    console.log('Current step:', currentStep);
     
     // If not connected to Plaid, start with welcome
     if (!userData.plaidConnected) {
@@ -117,36 +117,66 @@ export const useConversationManager = () => {
       }
     }
 
-    // All data collected - move to free chat
-    console.log('All data collected, returning complete step');
+    // All data collected - show completion message
+    console.log('All data collected, returning completion step');
     return {
       id: 'complete',
-      message: "Perfect! I have all the information I need. You can now ask me questions like 'Can I afford this car?' or click below to see your lender matches.",
+      message: "Perfect! I have all the information I need. You can now ask me questions like 'Can I afford this car?' or click the button below to see your personalized lender matches.",
       component: 'free-chat'
     };
   };
 
-  // Update completion status
+  // Get missing fields for user feedback
+  const getMissingFields = (): string[] => {
+    const requiredFields = [
+      { key: 'plaidConnected', label: 'Bank account connection' },
+      { key: 'dateOfBirth', label: 'Date of birth' },
+      { key: 'employmentType', label: 'Employment type' },
+      { key: 'vehicleType', label: 'Vehicle type (new/used)' },
+      { key: 'vinOrModel', label: 'Vehicle information' },
+      { key: 'downPayment', label: 'Down payment amount' },
+      { key: 'tradeInValue', label: 'Trade-in value' }
+    ];
+
+    return requiredFields
+      .filter(field => {
+        const value = userData[field.key as keyof typeof userData];
+        return !value || value === '';
+      })
+      .map(field => field.label);
+  };
+
+  // Update completion status whenever userData changes
   useEffect(() => {
     const complete = checkDataComplete();
     setIsComplete(complete);
+    
+    if (complete && !shouldShowLenderMatching) {
+      setShouldShowLenderMatching(true);
+    }
+    
     console.log('Data complete status updated:', complete);
   }, [userData]);
 
   // Update current step when userData changes
   useEffect(() => {
-    const nextStep = getNextStep();
-    if (nextStep) {
-      setCurrentStep(nextStep.id);
-      console.log('Current step updated to:', nextStep.id);
+    if (!isComplete) {
+      const nextStep = getNextStep();
+      if (nextStep && nextStep.id !== currentStep) {
+        setCurrentStep(nextStep.id);
+        console.log('Current step updated to:', nextStep.id);
+      }
     }
-  }, [userData]);
+  }, [userData, isComplete]);
 
   return {
     currentStep,
     setCurrentStep,
     isComplete,
+    shouldShowLenderMatching,
+    setShouldShowLenderMatching,
     getNextStep,
+    getMissingFields,
     conversationSteps
   };
 };

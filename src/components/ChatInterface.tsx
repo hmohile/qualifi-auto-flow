@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -9,6 +10,7 @@ import MessageList from "./chat/MessageList";
 import UserInput from "./chat/UserInput";
 import { useConversationManager } from "./chat/ConversationManager";
 import { useFreeChatHandler } from "./chat/FreeChatHandler";
+import LenderResults from "./LenderResults";
 
 interface Message {
   id: string;
@@ -23,9 +25,14 @@ const ChatInterface = () => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [isTyping, setIsTyping] = useState(false);
   const [lenderMatches, setLenderMatches] = useState<any>(null);
-  const [conversationMode, setConversationMode] = useState<'onboarding' | 'free-chat' | 'complete'>('onboarding');
+  const [showLenderResults, setShowLenderResults] = useState(false);
   const { userData, updateUserData } = useUserData();
-  const { getNextStep, isComplete } = useConversationManager();
+  const { 
+    getNextStep, 
+    isComplete, 
+    shouldShowLenderMatching,
+    getMissingFields 
+  } = useConversationManager();
   const { handleFreeChatQuestion } = useFreeChatHandler();
 
   // Normalize user input for better matching
@@ -89,7 +96,13 @@ const ChatInterface = () => {
   };
 
   const continueConversation = () => {
-    console.log('continueConversation called');
+    console.log('continueConversation called, isComplete:', isComplete);
+    
+    if (isComplete) {
+      console.log('Data complete, not continuing conversation');
+      return;
+    }
+    
     const nextStep = getNextStep();
     
     if (!nextStep) {
@@ -100,7 +113,6 @@ const ChatInterface = () => {
     console.log('Next step:', nextStep);
 
     if (nextStep.id === 'complete') {
-      setConversationMode('free-chat');
       addBotMessage(nextStep.message, 'free-chat');
     } else if (nextStep.id === 'auto-price-set') {
       // Handle auto price setting
@@ -127,30 +139,33 @@ const ChatInterface = () => {
     }
   }, []);
 
-  // Continue conversation when userData changes (but not on initial load)
+  // Continue conversation when userData changes
   useEffect(() => {
-    if (messages.length > 0 && conversationMode === 'onboarding') {
+    if (messages.length > 0 && !isComplete) {
       console.log('UserData changed, checking if we should continue conversation');
-      // Small delay to allow state to settle
       const timer = setTimeout(() => {
-        const nextStep = getNextStep();
-        if (nextStep && nextStep.id !== 'welcome') {
-          console.log('Continuing conversation due to userData change');
-          continueConversation();
-        }
-      }, 500);
+        continueConversation();
+      }, 1000);
       
       return () => clearTimeout(timer);
     }
-  }, [userData, conversationMode]);
+  }, [userData]);
 
-  // Check if data is complete and switch modes
+  // Show completion message when data becomes complete
   useEffect(() => {
-    if (isComplete && conversationMode === 'onboarding') {
-      console.log('Data collection complete, switching to free chat');
-      setConversationMode('free-chat');
+    if (isComplete && shouldShowLenderMatching && messages.length > 0) {
+      const lastMessage = messages[messages.length - 1];
+      if (lastMessage.component !== 'free-chat') {
+        console.log('Data collection complete, showing completion message');
+        setTimeout(() => {
+          addBotMessage(
+            "Perfect! I have all the information I need. You can now ask me questions like 'Can I afford this car?' or click the button below to see your personalized lender matches.",
+            'free-chat'
+          );
+        }, 1500);
+      }
     }
-  }, [isComplete, conversationMode]);
+  }, [isComplete, shouldShowLenderMatching]);
 
   const handlePlaidSuccess = (data: any) => {
     console.log('Plaid data received:', data);
@@ -181,8 +196,8 @@ const ChatInterface = () => {
     
     addUserMessage(value);
     
-    if (conversationMode === 'free-chat' && !fieldName) {
-      // Handle free-form questions
+    if (isComplete && !fieldName) {
+      // Handle free-form questions when data is complete
       setIsTyping(true);
       try {
         const response = await handleFreeChatQuestion(value);
@@ -203,13 +218,24 @@ const ChatInterface = () => {
   };
 
   const handleFindLenders = () => {
+    if (!isComplete) {
+      const missingFields = getMissingFields();
+      toast({
+        title: "Missing Information",
+        description: `Please provide: ${missingFields.join(', ')}`,
+        variant: "destructive"
+      });
+      
+      addBotMessage(`I still need some information from you: ${missingFields.join(', ')}. Let me ask you about these details.`);
+      continueConversation();
+      return;
+    }
+    
     console.log('Finding lenders for user data:', userData);
-    setConversationMode('complete');
+    setShowLenderResults(true);
     
     const matches = matchBorrowerToLenders(userData);
     setLenderMatches(matches);
-    
-    addBotMessage("Perfect! Let me find the best lenders for your situation...", 'lender-results');
     
     toast({
       title: "Finding Your Matches",
@@ -221,65 +247,11 @@ const ChatInterface = () => {
     if (!lenderMatches) return null;
 
     return (
-      <div className="mt-4 space-y-4">
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-          <h3 className="font-semibold text-blue-900 mb-2">Your Loan Profile Summary</h3>
-          <div className="text-sm text-blue-800 space-y-1">
-            <p>• Monthly Income: ${lenderMatches.borrowerSummary.monthlyIncome.toLocaleString()}</p>
-            <p>• Vehicle Value: ${lenderMatches.borrowerSummary.vehicleValue.toLocaleString()}</p>
-            <p>• Down Payment: ${lenderMatches.borrowerSummary.downPayment.toLocaleString()}</p>
-            <p>• Loan Amount: ${lenderMatches.borrowerSummary.loanAmount.toLocaleString()}</p>
-            <p>• Estimated Credit Score: {lenderMatches.borrowerSummary.estimatedCreditScore}</p>
-          </div>
-        </div>
-
-        {lenderMatches.matches.length > 0 ? (
-          <div className="space-y-3">
-            <h3 className="font-semibold text-green-800">🎉 Great news! You qualify for {lenderMatches.matches.length} lenders:</h3>
-            {lenderMatches.matches.map((match: any, index: number) => (
-              <div key={match.lender.id} className={`border rounded-lg p-4 ${index === 0 ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'}`}>
-                <div className="flex justify-between items-start mb-2">
-                  <div>
-                    <h4 className="font-semibold text-lg">{match.lender.name}</h4>
-                    {index === 0 && <span className="text-xs bg-green-500 text-white px-2 py-1 rounded">BEST RATE</span>}
-                  </div>
-                  <div className="text-right">
-                    <div className="text-2xl font-bold text-green-600">{match.estimatedAPR.toFixed(2)}% APR</div>
-                    <div className="text-sm text-gray-600">{match.confidence} confidence</div>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-4 text-sm">
-                  <div>
-                    <span className="text-gray-600">Monthly Payment:</span>
-                    <div className="font-semibold">${match.monthlyPayment.toLocaleString()}</div>
-                  </div>
-                  <div>
-                    <span className="text-gray-600">Loan Term:</span>
-                    <div className="font-semibold">{match.loanTerm} months</div>
-                  </div>
-                </div>
-                <Button className="w-full mt-3" variant={index === 0 ? "default" : "outline"}>
-                  View Details & Apply
-                </Button>
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-            <h3 className="font-semibold text-yellow-800 mb-2">No Direct Matches Found</h3>
-            <p className="text-yellow-700 text-sm mb-3">
-              Based on your current profile, you don't qualify for our standard lenders. Here are some common reasons:
-            </p>
-            <ul className="text-sm text-yellow-700 space-y-1">
-              {lenderMatches.noMatchReasons.slice(0, 3).map((reason: string, index: number) => (
-                <li key={index}>• {reason}</li>
-              ))}
-            </ul>
-            <Button className="w-full mt-3" variant="outline">
-              Explore Alternative Options
-            </Button>
-          </div>
-        )}
+      <div className="mt-4">
+        <LenderResults 
+          matches={lenderMatches.matches}
+          borrowerSummary={lenderMatches.borrowerSummary}
+        />
       </div>
     );
   };
@@ -320,7 +292,7 @@ const ChatInterface = () => {
             className="w-full"
             size="lg"
           >
-            Find My Lender Matches
+            {isComplete ? "Find My Lender Matches" : "Check My Information & Find Lenders"}
           </Button>
         </div>
       );
@@ -332,6 +304,35 @@ const ChatInterface = () => {
     
     return null;
   };
+
+  if (showLenderResults) {
+    return (
+      <div className="min-h-screen bg-background">
+        {/* Header */}
+        <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
+          <div className="container flex h-16 items-center">
+            <div className="text-2xl font-bold text-primary">Qualifi Auto</div>
+            <div className="ml-auto flex items-center gap-4">
+              <Button 
+                variant="outline" 
+                onClick={() => setShowLenderResults(false)}
+              >
+                Back to Chat
+              </Button>
+              <div className="text-sm text-muted-foreground">
+                Your Lender Matches
+              </div>
+            </div>
+          </div>
+        </header>
+
+        {/* Lender Results */}
+        <div className="container mx-auto max-w-6xl p-4">
+          {renderLenderResults()}
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
