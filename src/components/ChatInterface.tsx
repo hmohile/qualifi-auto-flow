@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +24,7 @@ const ChatInterface = () => {
   const [isTyping, setIsTyping] = useState(false);
   const [lenderMatches, setLenderMatches] = useState<any>(null);
   const [currentQuestionId, setCurrentQuestionId] = useState<string | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
   const { userData, updateUserData } = useUserData();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -65,6 +65,7 @@ const ChatInterface = () => {
   // Smart conversation flow - only ask for missing information
   const getNextQuestion = () => {
     console.log('Current userData:', userData);
+    console.log('Current question ID:', currentQuestionId);
     
     // After Plaid connection, check what we still need
     if (!userData.plaidConnected) {
@@ -181,12 +182,12 @@ const ChatInterface = () => {
 
   useEffect(() => {
     // Start the conversation only once
-    if (messages.length === 0) {
+    if (messages.length === 0 && !isProcessing) {
       const firstQuestion = getNextQuestion();
       setCurrentQuestionId(firstQuestion.id);
       addBotMessage(firstQuestion.message, firstQuestion.component, firstQuestion.fieldName);
     }
-  }, []);
+  }, [messages.length, isProcessing]);
 
   const addBotMessage = (content: string, component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results', fieldName?: string) => {
     setIsTyping(true);
@@ -215,12 +216,22 @@ const ChatInterface = () => {
   };
 
   const continueConversation = () => {
+    if (isProcessing) {
+      console.log('Already processing, skipping...');
+      return;
+    }
+    
+    setIsProcessing(true);
+    
     setTimeout(() => {
       const nextQuestion = getNextQuestion();
+      
+      console.log('Next question:', nextQuestion.id, 'Current:', currentQuestionId);
       
       // Prevent asking the same question twice
       if (nextQuestion.id === currentQuestionId) {
         console.log('Skipping duplicate question:', nextQuestion.id);
+        setIsProcessing(false);
         return;
       }
       
@@ -234,11 +245,17 @@ const ChatInterface = () => {
       } else {
         addBotMessage(nextQuestion.message, nextQuestion.component, nextQuestion.fieldName);
       }
+      
+      setIsProcessing(false);
     }, 1000);
   };
 
   const handlePlaidSuccess = (data: any) => {
     console.log('Plaid data received:', data);
+    
+    // Prevent multiple calls
+    if (isProcessing) return;
+    
     updateUserData({
       plaidConnected: true,
       fullName: data.fullName,
@@ -252,7 +269,11 @@ const ChatInterface = () => {
     
     setTimeout(() => {
       addBotMessage(`Excellent! I can see your income is ${data.monthlyIncome} per month and you have ${data.accountBalance} in your account. This puts you in a strong position for a great rate!`);
-      continueConversation();
+      
+      // Small delay before continuing
+      setTimeout(() => {
+        continueConversation();
+      }, 500);
     }, 1500);
     
     toast({
@@ -262,7 +283,7 @@ const ChatInterface = () => {
   };
 
   const handleInputSubmit = (value: string, fieldName?: string) => {
-    if (!value.trim()) return;
+    if (!value.trim() || isProcessing) return;
     
     const normalizedValue = normalizeInput(value);
     addUserMessage(value);
@@ -272,7 +293,11 @@ const ChatInterface = () => {
     }
     
     setCurrentInput("");
-    continueConversation();
+    
+    // Small delay before continuing
+    setTimeout(() => {
+      continueConversation();
+    }, 500);
   };
 
   const handleConsentChange = (field: string, checked: boolean) => {
@@ -282,6 +307,8 @@ const ChatInterface = () => {
   };
 
   const handleSubmitApplication = () => {
+    if (isProcessing) return;
+    
     console.log('Final user data:', userData);
     toast({
       title: "Finding Your Matches",
@@ -383,7 +410,7 @@ const ChatInterface = () => {
           />
           <Button 
             onClick={() => handleInputSubmit(currentInput, message.fieldName)}
-            disabled={!currentInput.trim()}
+            disabled={!currentInput.trim() || isProcessing}
           >
             <Send className="h-4 w-4" />
           </Button>
@@ -416,7 +443,7 @@ const ChatInterface = () => {
           </div>
           <Button 
             onClick={handleSubmitApplication}
-            disabled={!userData.consentToShare || !userData.consentToCreditCheck}
+            disabled={!userData.consentToShare || !userData.consentToCreditCheck || isProcessing}
             className="mt-4"
           >
             Find My Lenders
