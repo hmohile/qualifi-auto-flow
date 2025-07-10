@@ -7,13 +7,15 @@ import { Send, Bot, User, Loader2 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import { useUserData } from "@/hooks/useUserData";
 import PlaidLinkButton from "@/components/PlaidLinkButton";
+import { parseVehicleInfo, estimateVehicleValue } from "@/utils/vehiclePricing";
+import { matchBorrowerToLenders } from "@/utils/lenderMatching";
 
 interface Message {
   id: string;
   type: 'bot' | 'user';
   content: string;
   timestamp: Date;
-  component?: 'plaid-link' | 'input' | 'checkbox';
+  component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results';
   fieldName?: string;
 }
 
@@ -22,63 +24,116 @@ const ChatInterface = () => {
   const [currentInput, setCurrentInput] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [currentStep, setCurrentStep] = useState(0);
+  const [lenderMatches, setLenderMatches] = useState<any>(null);
   const { userData, updateUserData } = useUserData();
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
-  const conversationFlow = [
-    {
-      id: 'welcome',
-      message: "Hi! I'm your AI auto loan assistant. I'll help you get pre-approved for the best auto loan rates in just a few minutes. First, let's securely connect your bank account to auto-fill your application.",
-      component: 'plaid-link' as const
-    },
-    {
-      id: 'dateOfBirth',
-      message: "Great! Now I need a few more details. What's your date of birth? (MM/DD/YYYY)",
-      component: 'input' as const,
-      fieldName: 'dateOfBirth'
-    },
-    {
-      id: 'employmentType',
-      message: "What's your employment type? (Full-time, Part-time, Self-employed, etc.)",
-      component: 'input' as const,
-      fieldName: 'employmentType'
-    },
-    {
-      id: 'vehicleType',
-      message: "Are you looking for a new or used vehicle?",
-      component: 'input' as const,
-      fieldName: 'vehicleType'
-    },
-    {
-      id: 'vinOrModel',
-      message: "Do you have a specific vehicle in mind? Please provide the VIN or Make/Model/Year:",
-      component: 'input' as const,
-      fieldName: 'vinOrModel'
-    },
-    {
-      id: 'purchasePrice',
-      message: "What's the expected purchase price of the vehicle?",
-      component: 'input' as const,
-      fieldName: 'purchasePrice'
-    },
-    {
-      id: 'downPayment',
-      message: "How much are you planning to put down as a down payment?",
-      component: 'input' as const,
-      fieldName: 'downPayment'
-    },
-    {
-      id: 'tradeInValue',
-      message: "Do you have a trade-in vehicle? If so, what's its estimated value? (Optional - enter 'none' if no trade-in)",
-      component: 'input' as const,
-      fieldName: 'tradeInValue'
-    },
-    {
-      id: 'consent',
-      message: "Finally, I need your consent for the next steps:",
-      component: 'checkbox' as const
+  // Smart conversation flow - only ask for missing information
+  const getNextQuestion = () => {
+    // After Plaid connection, check what we still need
+    if (!userData.plaidConnected) {
+      return {
+        id: 'welcome',
+        message: "Hi! I'm your AI auto loan assistant. I'll help you get pre-approved for the best auto loan rates in just a few minutes. First, let's securely connect your bank account to auto-fill your application.",
+        component: 'plaid-link' as const
+      };
     }
-  ];
+
+    // Essential missing information (not available from Plaid)
+    if (!userData.dateOfBirth) {
+      return {
+        id: 'dateOfBirth',
+        message: "Perfect! I have your financial information. I just need a few more details. What's your date of birth? (MM/DD/YYYY)",
+        component: 'input' as const,
+        fieldName: 'dateOfBirth'
+      };
+    }
+
+    if (!userData.employmentType) {
+      return {
+        id: 'employmentType',
+        message: "What's your employment type? (Full-time, Part-time, Self-employed, etc.)",
+        component: 'input' as const,
+        fieldName: 'employmentType'
+      };
+    }
+
+    if (!userData.vehicleType) {
+      return {
+        id: 'vehicleType',
+        message: "Are you looking for a new or used vehicle?",
+        component: 'input' as const,
+        fieldName: 'vehicleType'
+      };
+    }
+
+    if (!userData.vinOrModel) {
+      return {
+        id: 'vinOrModel',
+        message: "What vehicle are you interested in? Please provide the VIN, or just tell me the make/model/year (e.g., '2024 Toyota Camry'):",
+        component: 'input' as const,
+        fieldName: 'vinOrModel'
+      };
+    }
+
+    // Auto-determine purchase price from vehicle info, only ask if we can't figure it out
+    if (!userData.purchasePrice && userData.vinOrModel) {
+      const vehicleInfo = parseVehicleInfo(userData.vinOrModel);
+      const valueEstimate = estimateVehicleValue(vehicleInfo);
+      
+      if (valueEstimate && valueEstimate.confidence !== 'low') {
+        // Auto-set the price and continue
+        updateUserData({ purchasePrice: `$${valueEstimate.finalEstimate.toLocaleString()}` });
+        
+        return {
+          id: 'downPayment',
+          message: `Great! I found that vehicle. Based on current market data, a ${vehicleInfo?.year} ${vehicleInfo?.make} ${vehicleInfo?.model} is estimated at around $${valueEstimate.finalEstimate.toLocaleString()}. How much are you planning to put down as a down payment?`,
+          component: 'input' as const,
+          fieldName: 'downPayment'
+        };
+      } else {
+        return {
+          id: 'purchasePrice',
+          message: "I couldn't find pricing data for that specific vehicle. What's the expected purchase price?",
+          component: 'input' as const,
+          fieldName: 'purchasePrice'
+        };
+      }
+    }
+
+    if (!userData.downPayment) {
+      return {
+        id: 'downPayment',
+        message: "How much are you planning to put down as a down payment?",
+        component: 'input' as const,
+        fieldName: 'downPayment'
+      };
+    }
+
+    if (!userData.tradeInValue) {
+      return {
+        id: 'tradeInValue',
+        message: "Do you have a trade-in vehicle? If so, what's its estimated value? (Enter '$0' or 'none' if no trade-in)",
+        component: 'input' as const,
+        fieldName: 'tradeInValue'
+      };
+    }
+
+    if (!userData.consentToShare || !userData.consentToCreditCheck) {
+      return {
+        id: 'consent',
+        message: "Finally, I need your consent to find you the best loan matches:",
+        component: 'checkbox' as const
+      };
+    }
+
+    // All information collected, show results
+    return {
+      id: 'complete',
+      message: "Perfect! I have all the information I need. Let me find the best lenders for your situation...",
+      component: 'lender-results' as const
+    };
+  };
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -90,10 +145,11 @@ const ChatInterface = () => {
 
   useEffect(() => {
     // Start the conversation
-    addBotMessage(conversationFlow[0].message, conversationFlow[0].component);
+    const firstQuestion = getNextQuestion();
+    addBotMessage(firstQuestion.message, firstQuestion.component, firstQuestion.fieldName);
   }, []);
 
-  const addBotMessage = (content: string, component?: 'plaid-link' | 'input' | 'checkbox', fieldName?: string) => {
+  const addBotMessage = (content: string, component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results', fieldName?: string) => {
     setIsTyping(true);
     setTimeout(() => {
       const newMessage: Message = {
@@ -119,6 +175,20 @@ const ChatInterface = () => {
     setMessages(prev => [...prev, newMessage]);
   };
 
+  const continueConversation = () => {
+    setTimeout(() => {
+      const nextQuestion = getNextQuestion();
+      if (nextQuestion.id === 'complete') {
+        // Process lender matching
+        const matches = matchBorrowerToLenders(userData);
+        setLenderMatches(matches);
+        addBotMessage(nextQuestion.message, nextQuestion.component);
+      } else {
+        addBotMessage(nextQuestion.message, nextQuestion.component, nextQuestion.fieldName);
+      }
+    }, 1000);
+  };
+
   const handlePlaidSuccess = (data: any) => {
     console.log('Plaid data received:', data);
     updateUserData({
@@ -133,12 +203,9 @@ const ChatInterface = () => {
     addUserMessage("✅ Bank account connected successfully!");
     
     setTimeout(() => {
-      addBotMessage("Perfect! I've automatically filled in your basic information from your bank account. Now let me ask you for a few more details...");
-      setTimeout(() => {
-        setCurrentStep(1);
-        addBotMessage(conversationFlow[1].message, conversationFlow[1].component, conversationFlow[1].fieldName);
-      }, 1500);
-    }, 1000);
+      addBotMessage("Excellent! I can see your income is " + (data.monthlyIncome || "$5,000") + " per month and you have " + (data.accountBalance || "$15,000") + " in your account. This puts you in a strong position for a great rate!");
+      continueConversation();
+    }, 1500);
     
     toast({
       title: "Bank Connected",
@@ -152,31 +219,16 @@ const ChatInterface = () => {
     addUserMessage(value);
     
     if (fieldName) {
-      updateUserData({
-        [fieldName]: value
-      });
+      // Clean up trade-in value if user says none/0
+      if (fieldName === 'tradeInValue' && (value.toLowerCase().includes('none') || value.toLowerCase().includes('no') || value === '0')) {
+        updateUserData({ [fieldName]: '$0' });
+      } else {
+        updateUserData({ [fieldName]: value });
+      }
     }
     
     setCurrentInput("");
-    
-    // Move to next step
-    setTimeout(() => {
-      const nextStep = currentStep + 1;
-      if (nextStep < conversationFlow.length) {
-        setCurrentStep(nextStep);
-        addBotMessage(
-          conversationFlow[nextStep].message, 
-          conversationFlow[nextStep].component,
-          conversationFlow[nextStep].fieldName
-        );
-      } else {
-        // End of conversation
-        addBotMessage("Thank you! I have all the information I need. Let me process your application and find the best loan options for you.");
-        setTimeout(() => {
-          handleSubmitApplication();
-        }, 2000);
-      }
-    }, 1000);
+    continueConversation();
   };
 
   const handleConsentChange = (field: string, checked: boolean) => {
@@ -188,11 +240,78 @@ const ChatInterface = () => {
   const handleSubmitApplication = () => {
     console.log('Final user data:', userData);
     toast({
-      title: "Application Submitted",
-      description: "We're processing your application and will show you loan options shortly.",
+      title: "Finding Your Matches",
+      description: "We're analyzing your profile against our lender network...",
     });
     
-    addBotMessage("🎉 Your application has been submitted! We're now matching you with the best lenders. This usually takes 30-60 seconds...");
+    continueConversation();
+  };
+
+  const renderLenderResults = () => {
+    if (!lenderMatches) return null;
+
+    return (
+      <div className="mt-4 space-y-4">
+        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+          <h3 className="font-semibold text-blue-900 mb-2">Your Loan Profile Summary</h3>
+          <div className="text-sm text-blue-800 space-y-1">
+            <p>• Monthly Income: ${lenderMatches.borrowerSummary.monthlyIncome.toLocaleString()}</p>
+            <p>• Vehicle Value: ${lenderMatches.borrowerSummary.vehicleValue.toLocaleString()}</p>
+            <p>• Down Payment: ${lenderMatches.borrowerSummary.downPayment.toLocaleString()}</p>
+            <p>• Loan Amount: ${lenderMatches.borrowerSummary.loanAmount.toLocaleString()}</p>
+            <p>• Estimated Credit Score: {lenderMatches.borrowerSummary.estimatedCreditScore}</p>
+          </div>
+        </div>
+
+        {lenderMatches.matches.length > 0 ? (
+          <div className="space-y-3">
+            <h3 className="font-semibold text-green-800">🎉 Great news! You qualify for {lenderMatches.matches.length} lenders:</h3>
+            {lenderMatches.matches.map((match: any, index: number) => (
+              <div key={match.lender.id} className={`border rounded-lg p-4 ${index === 0 ? 'border-green-500 bg-green-50' : 'border-gray-200 bg-white'}`}>
+                <div className="flex justify-between items-start mb-2">
+                  <div>
+                    <h4 className="font-semibold text-lg">{match.lender.name}</h4>
+                    {index === 0 && <span className="text-xs bg-green-500 text-white px-2 py-1 rounded">BEST RATE</span>}
+                  </div>
+                  <div className="text-right">
+                    <div className="text-2xl font-bold text-green-600">{match.estimatedAPR.toFixed(2)}% APR</div>
+                    <div className="text-sm text-gray-600">{match.confidence} confidence</div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-4 text-sm">
+                  <div>
+                    <span className="text-gray-600">Monthly Payment:</span>
+                    <div className="font-semibold">${match.monthlyPayment.toLocaleString()}</div>
+                  </div>
+                  <div>
+                    <span className="text-gray-600">Loan Term:</span>
+                    <div className="font-semibold">{match.loanTerm} months</div>
+                  </div>
+                </div>
+                <Button className="w-full mt-3" variant={index === 0 ? "default" : "outline"}>
+                  View Details & Apply
+                </Button>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+            <h3 className="font-semibold text-yellow-800 mb-2">No Direct Matches Found</h3>
+            <p className="text-yellow-700 text-sm mb-3">
+              Based on your current profile, you don't qualify for our standard lenders. Here are some common reasons:
+            </p>
+            <ul className="text-sm text-yellow-700 space-y-1">
+              {lenderMatches.noMatchReasons.slice(0, 3).map((reason: string, index: number) => (
+                <li key={index}>• {reason}</li>
+              ))}
+            </ul>
+            <Button className="w-full mt-3" variant="outline">
+              Explore Alternative Options
+            </Button>
+          </div>
+        )}
+      </div>
+    );
   };
 
   const renderMessageComponent = (message: Message) => {
@@ -252,14 +371,18 @@ const ChatInterface = () => {
             </label>
           </div>
           <Button 
-            onClick={() => handleInputSubmit('Consents provided')}
+            onClick={handleSubmitApplication}
             disabled={!userData.consentToShare || !userData.consentToCreditCheck}
             className="mt-4"
           >
-            Continue
+            Find My Lenders
           </Button>
         </div>
       );
+    }
+
+    if (message.component === 'lender-results') {
+      return renderLenderResults();
     }
     
     return null;
