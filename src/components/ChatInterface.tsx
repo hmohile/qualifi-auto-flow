@@ -10,6 +10,7 @@ import UserInput from "./chat/UserInput";
 import { useConversationManager } from "./chat/ConversationManager";
 import { useFreeChatHandler } from "./chat/FreeChatHandler";
 import LenderResults from "./LenderResults";
+import GPTLoanResults from "./GPTLoanResults";
 import QuoteCollection from "./QuoteCollection";
 import { LenderQuote } from "@/services/mockLenderAPI";
 
@@ -18,7 +19,7 @@ interface Message {
   type: 'bot' | 'user';
   content: string;
   timestamp: Date;
-  component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results' | 'free-chat';
+  component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results' | 'free-chat' | 'gpt-loan-results';
   fieldName?: string;
 }
 
@@ -74,7 +75,7 @@ const ChatInterface = () => {
     return input.trim();
   };
 
-  const addBotMessage = (content: string, component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results' | 'free-chat', fieldName?: string) => {
+  const addBotMessage = (content: string, component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results' | 'free-chat' | 'gpt-loan-results', fieldName?: string) => {
     setIsTyping(true);
     setTimeout(() => {
       const newMessage: Message = {
@@ -118,7 +119,7 @@ const ChatInterface = () => {
     console.log('Next step:', nextStep);
 
     if (nextStep.id === 'complete') {
-      addBotMessage(nextStep.message, 'free-chat');
+      addBotMessage(nextStep.message, 'gpt-loan-results');
       setCompletionMessageShown(true);
     } else if (nextStep.id === 'auto-price-set') {
       // Handle auto price setting
@@ -352,6 +353,14 @@ const ChatInterface = () => {
           <p className="text-xs text-gray-500 text-center">
             AI Quote Collection contacts real lenders and negotiates better rates automatically
           </p>
+        </div>
+      );
+    }
+
+    if (message.component === 'gpt-loan-results') {
+      return (
+        <div className="mt-6">
+          <GPTLoanResults />
         </div>
       );
     }
