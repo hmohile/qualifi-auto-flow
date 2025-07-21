@@ -119,7 +119,7 @@ const ChatInterface = () => {
     console.log('Next step:', nextStep);
 
     if (nextStep.id === 'complete') {
-      addBotMessage(nextStep.message, 'gpt-loan-results');
+      addBotMessage(nextStep.message, 'lender-results');
       setCompletionMessageShown(true);
     } else if (nextStep.id === 'auto-price-set') {
       // Handle auto price setting
@@ -357,7 +357,7 @@ const ChatInterface = () => {
       );
     }
 
-    if (message.component === 'gpt-loan-results') {
+    if (message.component === 'lender-results') {
       return (
         <div className="mt-6">
           <GPTLoanResults />
