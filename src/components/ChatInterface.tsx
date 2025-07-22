@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
 import { useUserData } from "@/hooks/useUserData";
-import PlaidLinkButton from "@/components/PlaidLinkButton";
+import OpenAILoanResults from "@/components/OpenAILoanResults";
 import { parseVehicleInfo, estimateVehicleValue } from "@/utils/vehiclePricing";
 import { matchBorrowerToLenders } from "@/utils/lenderMatching";
 import MessageList from "./chat/MessageList";
@@ -18,7 +18,7 @@ interface Message {
   type: 'bot' | 'user';
   content: string;
   timestamp: Date;
-  component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results' | 'free-chat';
+  component?: 'input' | 'checkbox' | 'lender-results' | 'free-chat';
   fieldName?: string;
 }
 
@@ -74,7 +74,7 @@ const ChatInterface = () => {
     return input.trim();
   };
 
-  const addBotMessage = (content: string, component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results' | 'free-chat', fieldName?: string) => {
+  const addBotMessage = (content: string, component?: 'input' | 'checkbox' | 'lender-results' | 'free-chat', fieldName?: string) => {
     setIsTyping(true);
     setTimeout(() => {
       const newMessage: Message = {
@@ -118,7 +118,7 @@ const ChatInterface = () => {
     console.log('Next step:', nextStep);
 
     if (nextStep.id === 'complete') {
-      addBotMessage(nextStep.message, 'free-chat');
+      addBotMessage(nextStep.message, 'lender-results');
       setCompletionMessageShown(true);
     } else if (nextStep.id === 'auto-price-set') {
       // Handle auto price setting
@@ -173,29 +173,6 @@ const ChatInterface = () => {
     }
   }, [isComplete, shouldShowLenderMatching]);
 
-  const handlePlaidSuccess = (data: any) => {
-    console.log('Plaid data received:', data);
-    
-    updateUserData({
-      plaidConnected: true,
-      fullName: data.fullName,
-      email: data.email,
-      monthlyIncome: data.monthlyIncome,
-      accountBalance: data.accountBalance,
-      employerName: data.employerName
-    });
-    
-    addUserMessage("✅ Bank account connected successfully!");
-    
-    setTimeout(() => {
-      addBotMessage(`Excellent! I can see your income is ${data.monthlyIncome} per month and you have ${data.accountBalance} in your account. This puts you in a strong position for a great rate!`);
-    }, 1000);
-    
-    toast({
-      title: "Bank Connected",
-      description: "Your bank account has been connected successfully.",
-    });
-  };
 
   const handleInputSubmit = async (value: string, fieldName?: string) => {
     if (!value.trim()) return;
@@ -302,14 +279,6 @@ const ChatInterface = () => {
   };
 
   const renderMessageComponent = (message: Message) => {
-    if (message.component === 'plaid-link') {
-      return (
-        <div className="mt-4">
-          <PlaidLinkButton onSuccess={handlePlaidSuccess} />
-        </div>
-      );
-    }
-    
     if (message.component === 'input') {
       return (
         <div className="mt-4">
@@ -319,6 +288,14 @@ const ChatInterface = () => {
             placeholder="Type your answer..."
             disabled={isTyping}
           />
+        </div>
+      );
+    }
+
+    if (message.component === 'lender-results') {
+      return (
+        <div className="mt-4">
+          <OpenAILoanResults />
         </div>
       );
     }

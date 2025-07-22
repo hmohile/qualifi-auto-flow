@@ -6,7 +6,7 @@ export interface Message {
   type: 'bot' | 'user';
   content: string;
   timestamp: Date;
-  component?: 'plaid-link' | 'input' | 'checkbox' | 'lender-results' | 'free-chat';
+  component?: 'input' | 'checkbox' | 'lender-results' | 'free-chat';
   fieldName?: string;
 }
 

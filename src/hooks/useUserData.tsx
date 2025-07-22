@@ -1,6 +1,15 @@
 import { useState, useContext, createContext, ReactNode } from 'react';
 
 export interface UserData {
+  // Core loan application fields
+  carMakeModel?: string;
+  totalBudget?: string;
+  downPayment?: string;
+  annualIncome?: string;
+  creditScore?: string;
+  employmentStatus?: string;
+  
+  // Legacy fields (keeping for compatibility)
   fullName?: string;
   email?: string;
   phone?: string;
@@ -11,7 +20,6 @@ export interface UserData {
   vehicleType?: string;
   vinOrModel?: string;
   purchasePrice?: string;
-  downPayment?: string;
   tradeInValue?: string;
   monthlyIncome?: string;
   accountBalance?: string;
