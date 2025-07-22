@@ -27,11 +27,6 @@ export interface UserData {
     termLength: number;
     selectedAt: string;
   };
-  // New fields for simplified flow
-  carMakeModel?: string;
-  totalBudget?: string;
-  annualIncome?: string;
-  creditScore?: string;
 }
 
 interface UserDataContextType {
