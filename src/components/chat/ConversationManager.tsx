@@ -1,6 +1,6 @@
+
 import { useState, useEffect } from 'react';
 import { useUserData } from '@/hooks/useUserData';
-import { parseVehicleInfo, estimateVehicleValue } from '@/utils/vehiclePricing';
 
 export interface ConversationStep {
   id: string;
@@ -21,13 +21,7 @@ export const useConversationManager = () => {
   const conversationSteps: ConversationStep[] = [
     {
       id: 'welcome',
-      message: "Hi! I'm your AI auto loan assistant. I'll help you find the best auto loan options based on a few simple questions. Let's start!",
-      component: 'input',
-      isRequired: true
-    },
-    {
-      id: 'carMakeModel',
-      message: "Which car do you want to buy? Please provide the make and model (e.g., Toyota Camry, Ford F-150):",
+      message: "Hi! I'm your AI auto loan assistant. I'll help you find the best auto loan options based on a few simple questions. Let's start!\n\nWhich car do you want to buy? Please provide the make and model (e.g., Toyota Camry, Ford F-150):",
       component: 'input',
       fieldName: 'carMakeModel',
       isRequired: true
@@ -82,7 +76,7 @@ export const useConversationManager = () => {
       return null;
     }
     
-    // Check each step in order
+    // Check each step in order to find the first missing field
     for (let i = 0; i < conversationSteps.length; i++) {
       const step = conversationSteps[i];
       if (step.fieldName) {
@@ -91,9 +85,6 @@ export const useConversationManager = () => {
           console.log(`Missing field: ${step.fieldName}, returning step:`, step.id);
           return step;
         }
-      } else if (step.id === 'welcome' && !userData.carMakeModel) {
-        // Return welcome step if no car info yet
-        return step;
       }
     }
 
