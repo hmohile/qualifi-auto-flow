@@ -1,3 +1,4 @@
+
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { toast } from "@/hooks/use-toast";
@@ -103,11 +104,6 @@ const ChatInterface = () => {
   const continueConversation = () => {
     console.log('continueConversation called, isComplete:', isComplete);
     
-    if (isComplete && completionMessageShown) {
-      console.log('Data complete and completion message shown, not continuing conversation');
-      return;
-    }
-    
     const nextStep = getNextStep();
     
     if (!nextStep) {
@@ -117,21 +113,9 @@ const ChatInterface = () => {
 
     console.log('Next step:', nextStep);
 
-    if (nextStep.id === 'complete') {
-      addBotMessage(nextStep.message, 'lender-results');
+    if (nextStep.id === 'completion') {
+      addBotMessage(nextStep.message, 'free-chat');
       setCompletionMessageShown(true);
-    } else if (nextStep.id === 'auto-price-set') {
-      // Handle auto price setting
-      if (userData.vinOrModel) {
-        const vehicleInfo = parseVehicleInfo(userData.vinOrModel);
-        const valueEstimate = estimateVehicleValue(vehicleInfo);
-        if (valueEstimate && valueEstimate.confidence !== 'low') {
-          updateUserData({ purchasePrice: `$${valueEstimate.finalEstimate.toLocaleString()}` });
-        }
-      }
-      addBotMessage(nextStep.message);
-      // Continue to next question after a brief delay
-      setTimeout(() => continueConversation(), 2000);
     } else {
       addBotMessage(nextStep.message, nextStep.component, nextStep.fieldName);
     }
@@ -156,23 +140,6 @@ const ChatInterface = () => {
       return () => clearTimeout(timer);
     }
   }, [userData]);
-
-  // Show completion message when data becomes complete
-  useEffect(() => {
-    if (isComplete && shouldShowLenderMatching && messages.length > 0) {
-      const lastMessage = messages[messages.length - 1];
-      if (lastMessage.component !== 'free-chat') {
-        console.log('Data collection complete, showing completion message');
-        setTimeout(() => {
-          addBotMessage(
-            "Perfect! I have all the information I need. You can now ask me questions like 'Can I afford this car?' or click the button below to see your personalized lender matches.",
-            'free-chat'
-          );
-        }, 1500);
-      }
-    }
-  }, [isComplete, shouldShowLenderMatching]);
-
 
   const handleInputSubmit = async (value: string, fieldName?: string) => {
     if (!value.trim()) return;
@@ -265,19 +232,6 @@ const ChatInterface = () => {
     });
   };
 
-  const renderLenderResults = () => {
-    if (!lenderMatches) return null;
-
-    return (
-      <div className="mt-4">
-        <LenderResults 
-          matches={lenderMatches.matches}
-          borrowerSummary={lenderMatches.borrowerSummary}
-        />
-      </div>
-    );
-  };
-
   const renderMessageComponent = (message: Message) => {
     if (message.component === 'input') {
       return (
@@ -323,11 +277,11 @@ const ChatInterface = () => {
               variant="outline"
               size="lg"
             >
-              📊 View Estimated Matches
+              📊 View Loan Options
             </Button>
           </div>
           <p className="text-xs text-gray-500 text-center">
-            AI Quote Collection contacts real lenders and negotiates better rates automatically
+            Ask me about EMIs, eligibility, documents, delivery timelines, or comparisons!
           </p>
         </div>
       );
@@ -370,21 +324,15 @@ const ChatInterface = () => {
                 </Button>
               )}
               <div className="text-sm text-muted-foreground">
-                {realTimeQuotes.length > 0 ? 'Live Quotes' : 'Estimated Matches'}
+                {realTimeQuotes.length > 0 ? 'Live Quotes' : 'Loan Options'}
               </div>
             </div>
           </div>
         </header>
 
-        {/* Lender Results */}
+        {/* Loan Results */}
         <div className="container mx-auto max-w-6xl p-4">
-          {lenderMatches && (
-            <LenderResults 
-              matches={lenderMatches.matches}
-              borrowerSummary={lenderMatches.borrowerSummary}
-              realTimeQuotes={realTimeQuotes}
-            />
-          )}
+          <OpenAILoanResults />
         </div>
       </div>
     );

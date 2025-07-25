@@ -1,4 +1,5 @@
 
+
 import { useState, useEffect } from 'react';
 import { useUserData } from '@/hooks/useUserData';
 
@@ -53,6 +54,11 @@ export const useConversationManager = () => {
       component: 'input',
       fieldName: 'creditScore',
       isRequired: true
+    },
+    {
+      id: 'completion',
+      message: "Hey there 👋 You're almost set to hit the road!\n\nBased on everything you've shared – the car you're eyeing, your downpayment preferences, and your budget – we've already done the heavy lifting to find the best financing options for you.\n\nNow, if you have any questions – whether it's about EMIs, eligibility, delivery timelines, documents needed, or even how this car compares to another one you love – I'm right here to help, 24x7!\n\nJust type your question below. Let's make your car buying journey smooth, easy, and exciting 🚗💨\n\nP.S. You're closer to owning your dream car than you think! 💙",
+      component: 'free-chat'
     }
   ];
 
@@ -71,13 +77,8 @@ export const useConversationManager = () => {
   const getNextStep = (): ConversationStep | null => {
     console.log('Getting next step, current userData:', userData);
     
-    // If data is complete and completion message already shown, don't return anything
-    if (isComplete && completionMessageShown) {
-      return null;
-    }
-    
     // Check each step in order to find the first missing field
-    for (let i = 0; i < conversationSteps.length; i++) {
+    for (let i = 0; i < conversationSteps.length - 1; i++) {
       const step = conversationSteps[i];
       if (step.fieldName) {
         const fieldValue = userData[step.fieldName as keyof typeof userData];
@@ -88,14 +89,9 @@ export const useConversationManager = () => {
       }
     }
 
-    // All data collected - show completion message only once
-    if (!completionMessageShown) {
-      console.log('All data collected, returning completion step');
-      return {
-        id: 'complete',
-        message: "Perfect! I have all the information I need. Let me find the best auto loan options for you using AI-powered search...",
-        component: 'lender-results'
-      };
+    // All required data collected - show completion message
+    if (checkDataComplete()) {
+      return conversationSteps[conversationSteps.length - 1]; // completion step
     }
 
     return null;
@@ -133,12 +129,10 @@ export const useConversationManager = () => {
 
   // Update current step when userData changes
   useEffect(() => {
-    if (!isComplete) {
-      const nextStep = getNextStep();
-      if (nextStep && nextStep.id !== currentStep) {
-        setCurrentStep(nextStep.id);
-        console.log('Current step updated to:', nextStep.id);
-      }
+    const nextStep = getNextStep();
+    if (nextStep && nextStep.id !== currentStep) {
+      setCurrentStep(nextStep.id);
+      console.log('Current step updated to:', nextStep.id);
     }
   }, [userData, isComplete]);
 
@@ -155,3 +149,4 @@ export const useConversationManager = () => {
     setCompletionMessageShown
   };
 };
+
