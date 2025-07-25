@@ -344,8 +344,11 @@ const ChatInterface = () => {
       <header className="border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
         <div className="container flex h-16 items-center">
           <div className="text-2xl font-bold text-primary">Qualifi Auto</div>
-          <div className="ml-auto text-sm text-muted-foreground">
-            AI Auto Loan Assistant
+          <div className="ml-auto flex items-center gap-4">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <span>AI Auto Loan Assistant</span>
+              <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" title="Connected to OpenAI"></div>
+            </div>
           </div>
         </div>
       </header>
