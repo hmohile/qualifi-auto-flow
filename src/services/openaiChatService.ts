@@ -1,4 +1,3 @@
-
 interface ChatRequest {
   userInput: string;
   userData: {
@@ -34,16 +33,16 @@ export const chatWithOpenAI = async ({ userInput, userData }: ChatRequest): Prom
   const loanAmount = budget - downPayment;
   const annualIncome = userData.annualIncome ? parseFloat(userData.annualIncome.replace(/[$,]/g, '')) : 0;
   const monthlyIncome = annualIncome / 12;
+  const estimatedEMI = Math.round((loanAmount * 0.02)); // Rough calculation - defined here for use throughout
   
   // EMI/Monthly payment questions
   if (lowerInput.includes('emi') || lowerInput.includes('monthly payment') || lowerInput.includes('installment')) {
-    const estimatedEMI = Math.round((loanAmount * 0.02)); // Rough calculation
     return `Great question! Based on your ${userData.carMakeModel} with a loan amount of $${loanAmount.toLocaleString()}, your estimated monthly EMI would be around $${estimatedEMI}.\n\nThis is calculated assuming:\n• Loan amount: $${loanAmount.toLocaleString()}\n• Term: 60 months\n• Interest rate: ~6-8% (varies by credit score)\n\nWith your ${userData.creditScore} credit profile, you're likely to get competitive rates! Would you like me to show you different EMI options based on loan terms? 🚗💙`;
   }
   
   // Eligibility questions
   if (lowerInput.includes('eligibility') || lowerInput.includes('eligible') || lowerInput.includes('qualify')) {
-    const debtToIncome = (estimatedEMI / monthlyIncome) * 100;
+    const debtToIncome = monthlyIncome > 0 ? (estimatedEMI / monthlyIncome) * 100 : 0;
     return `You're looking great for loan approval! Here's your eligibility snapshot:\n\n✅ **Income**: $${annualIncome.toLocaleString()}/year looks strong\n✅ **Credit**: ${userData.creditScore} credit score\n✅ **Down payment**: $${downPayment.toLocaleString()} shows commitment\n✅ **Debt-to-income ratio**: ~${debtToIncome.toFixed(1)}% (excellent if under 20%)\n\nBased on these factors, you should easily qualify for competitive rates. Most lenders love profiles like yours! Ready to move forward? 🎉`;
   }
   
