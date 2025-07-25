@@ -22,6 +22,16 @@ serve(async (req) => {
     const { userInput, userData, sessionId } = await req.json();
     
     console.log('Received request:', { userInput, userData, sessionId });
+
+    if (!openAIApiKey) {
+      console.error('OpenAI API key not found');
+      return new Response(JSON.stringify({ 
+        error: 'OpenAI API key not configured. Please check your environment variables.'
+      }), {
+        status: 500,
+        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+      });
+    }
     
     // Initialize Supabase client
     const supabase = createClient(supabaseUrl, supabaseAnonKey);
@@ -56,9 +66,9 @@ serve(async (req) => {
       console.error('Error storing user message:', userMessageError);
     }
     
-    // Create system prompt with user context
-    const systemPrompt = `You are a friendly auto loan assistant helping users with queries about buying a car. 
-    
+    // Create system prompt with user context and loan matching context
+    const systemPrompt = `You are a friendly and knowledgeable auto loan assistant helping users with queries about buying a car and finding the best loan options. 
+
 User Context:
 - Car: ${userData.carMakeModel || 'Not specified'}
 - Budget: ${userData.totalBudget || 'Not specified'}
@@ -66,7 +76,9 @@ User Context:
 - Income: ${userData.annualIncome || 'Not specified'}
 - Credit Score: ${userData.creditScore || 'Not specified'}
 
-Be enthusiastic, helpful, and use appropriate emojis. Provide specific information based on their context when possible.`;
+You have access to loan matching algorithms and can provide specific recommendations based on their profile. When users ask about loan comparisons, eligibility, rates, or recommendations, provide detailed analysis based on their financial profile.
+
+Be enthusiastic, helpful, and use appropriate emojis. Provide specific, actionable advice and calculations when possible. If they ask about loan options, explain how their credit score and income affect their eligibility and rates.`;
 
     // Call OpenAI API
     const response = await fetch('https://api.openai.com/v1/chat/completions', {
@@ -81,15 +93,23 @@ Be enthusiastic, helpful, and use appropriate emojis. Provide specific informati
           { role: 'system', content: systemPrompt },
           { role: 'user', content: userInput }
         ],
-        temperature: 0.8,
-        max_tokens: 500
+        temperature: 0.7,
+        max_tokens: 800
       }),
     });
 
     if (!response.ok) {
       const errorData = await response.json();
       console.error('OpenAI API error:', errorData);
-      throw new Error(`OpenAI API error: ${errorData.error?.message || 'Unknown error'}`);
+      
+      let errorMessage = 'Unknown error occurred';
+      if (errorData.error?.code === 'insufficient_quota') {
+        errorMessage = 'OpenAI API quota exceeded. Please check your OpenAI account billing and usage limits.';
+      } else if (errorData.error?.message) {
+        errorMessage = errorData.error.message;
+      }
+      
+      throw new Error(`OpenAI API error: ${errorMessage}`);
     }
 
     const data = await response.json();

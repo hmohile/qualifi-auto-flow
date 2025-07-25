@@ -40,6 +40,12 @@ export const chatWithOpenAI = async ({ userInput, userData, sessionId }: ChatReq
     
   } catch (error) {
     console.error('Error calling OpenAI service:', error);
+    
+    // Handle specific error types
+    if (error.message && error.message.includes('quota')) {
+      throw new Error('AI service is currently unavailable due to usage limits. Please try again later.');
+    }
+    
     throw new Error('Failed to get response from AI assistant. Please try again.');
   }
 };

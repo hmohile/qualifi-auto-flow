@@ -31,7 +31,13 @@ export const useFreeChatHandler = () => {
       return response.response;
     } catch (error) {
       console.error('Error in free chat:', error);
-      return "I apologize, but I'm having trouble processing your question right now. Could you please try again or rephrase your question?";
+      
+      // Provide more specific error messages
+      if (error.message && error.message.includes('quota')) {
+        return "I'm currently experiencing issues with my AI service due to usage limits. Please try again later or contact support if the issue persists.";
+      }
+      
+      return "I apologize, but I'm having trouble processing your question right now. This might be due to a temporary service issue. Could you please try again in a moment?";
     }
   };
 
