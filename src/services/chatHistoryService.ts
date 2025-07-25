@@ -29,7 +29,13 @@ export const getChatHistory = async (sessionId: string): Promise<ChatMessage[]> 
       throw error;
     }
 
-    return data || [];
+    // Type cast the data to ensure message_type is properly typed
+    const typedData = (data || []).map(msg => ({
+      ...msg,
+      message_type: msg.message_type as 'user' | 'bot'
+    }));
+
+    return typedData;
   } catch (error) {
     console.error('Error in getChatHistory:', error);
     return [];
