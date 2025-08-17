@@ -20,33 +20,48 @@ interface ChatResponse {
 
 export const chatWithOpenAI = async ({ userInput, userData, sessionId }: ChatRequest): Promise<ChatResponse> => {
   try {
-    console.log('Calling OpenAI Edge Function with:', { userInput, userData, sessionId });
+    console.log('Calling localhost chat server with:', { userInput, userData, sessionId });
     
-    const { data, error } = await supabase.functions.invoke('openai-chat', {
-      body: { userInput, userData, sessionId }
+    // Generate or get user_id - using a simple approach for now
+    const userId = sessionId || 'anonymous_user';
+    
+    const requestBody = {
+      user_question: userInput,
+      session_id: sessionId,
+      user_id: userId
+    };
+
+    const response = await fetch('http://localhost:8080/chat', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(requestBody)
     });
 
-    if (error) {
-      console.error('Supabase function error:', error);
-      throw error;
+    if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Chat server error:', errorText);
+      throw new Error(`Chat server error: ${response.status} ${response.statusText}`);
     }
 
-    console.log('OpenAI Edge Function response:', data);
+    const data = await response.json();
+    console.log('Chat server response:', data);
     
     return {
-      response: data.response,
-      sessionId: data.sessionId
+      response: data.response || data.message || 'No response received',
+      sessionId: sessionId || data.session_id || 'new_session'
     };
     
   } catch (error) {
-    console.error('Error calling OpenAI service:', error);
+    console.error('Error calling chat server:', error);
     
-    // Handle specific error types
-    if (error.message && error.message.includes('quota')) {
-      throw new Error('AI service is currently unavailable due to usage limits. Please try again later.');
+    // Handle network errors
+    if (error.message && error.message.includes('fetch')) {
+      throw new Error('Unable to connect to chat server. Please ensure the server is running on http://localhost:8080');
     }
     
-    throw new Error('Failed to get response from AI assistant. Please try again.');
+    throw new Error('Failed to get response from chat server. Please try again.');
   }
 };
 
